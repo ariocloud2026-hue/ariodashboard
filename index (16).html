@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Filiallar">
+<meta name="theme-color" content="#2563eb">
+<meta name="description" content="Filiallar Dashboard - Offline + Online, Google Sheets integratsiyasi">
+<title>💼 Filiallar Dashboard</title>
+<link rel="manifest" href="data:application/manifest+json,{&quot;name&quot;:&quot;Filiallar Dashboard&quot;,&quot;short_name&quot;:&quot;Filiallar&quot;,&quot;start_url&quot;:&quot;./&quot;,&quot;display&quot;:&quot;standalone&quot;,&quot;background_color&quot;:&quot;#ffffff&quot;,&quot;theme_color&quot;:&quot;#2563eb&quot;,&quot;icons&quot;:[{&quot;src&quot;:&quot;data:image/svg+xml,&lt;svg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 192 192%27&gt;&lt;rect fill=%27%232563eb%27 width=%27192%27 height=%27192%27/&gt;&lt;text x=%2796%27 y=%27120%27 font-size=%27100%27 text-anchor=%27middle%27 fill=%27white%27&gt;💼&lt;/text&gt;&lt;/svg&gt;&quot;,&quot;sizes&quot;:&quot;192x192&quot;,&quot;type&quot;:&quot;image/svg+xml&quot;,&quot;purpose&quot;:&quot;any&quot;}]}">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='75'>💼</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=Poppins:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --primary:#2563eb;
+  --primary-dark:#1e40af;
+  --success:#16a34a;
+  --danger:#dc2626;
+  --warning:#f59e0b;
+  --bg:#f8fafc;
+  --card:#ffffff;
+  --text:#0f172a;
+  --text-light:#64748b;
+  --text-muted:#94a3b8;
+  --border:#e2e8f0;
+  --shadow:0 4px 12px rgba(15,23,42,0.08);
+  --shadow-lg:0 12px 32px rgba(15,23,42,0.12);
+  --radius:12px;
+}
+
+html{font-feature-settings:"tnum" 1;height:100%;scroll-behavior:smooth}
+body{
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;
+  -webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;
+  height:100%;overflow:hidden;position:fixed;width:100%;
+  padding:0;margin:0;
+}
+
+#root{height:100vh;overflow-y:auto;display:flex;flex-direction:column}
+
+.app-container{display:flex;flex-direction:column;height:100vh;width:100%;background:var(--bg)}
+
+.app-header{
+  background:linear-gradient(135deg,var(--primary),var(--primary-dark));
+  color:white;padding:16px 20px;padding-top:max(12px,env(safe-area-inset-top));
+  box-shadow:var(--shadow);flex-shrink:0;
+  display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;
+}
+
+.app-header-title{font-size:18px;font-weight:800;margin:0}
+.app-header-info{font-size:12px;opacity:0.9}
+.app-header-status{
+  display:flex;gap:8px;align-items:center;font-size:12px;
+  background:rgba(255,255,255,0.15);padding:6px 10px;border-radius:6px;
+}
+
+.status-dot{width:6px;height:6px;border-radius:50%;animation:pulse 2s infinite}
+.status-dot.online{background:#4ade80}
+.status-dot.offline{background:#f87171}
+
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.6}}
+
+.app-content{
+  flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:16px;
+  padding-bottom:80px;display:flex;flex-direction:column;
+}
+
+.app-nav{
+  position:fixed;bottom:0;left:0;right:0;
+  background:var(--card);border-top:1px solid var(--border);
+  display:flex;justify-content:space-around;align-items:center;
+  padding:6px 0;padding-bottom:max(6px,env(safe-area-inset-bottom));
+  z-index:100;box-shadow:0 -2px 8px rgba(0,0,0,0.05);
+}
+
+.nav-btn{
+  display:flex;flex-direction:column;align-items:center;gap:4px;
+  padding:8px 12px;background:none;border:none;cursor:pointer;
+  color:var(--text-light);font-size:11px;font-weight:600;
+  transition:all 0.2s ease;flex:1;min-height:60px;justify-content:center;
+}
+
+.nav-btn.active{color:var(--primary)}
+.nav-btn:active{transform:scale(0.95)}
+
+.nav-icon{font-size:20px}
+
+.card{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:var(--radius);padding:16px;
+  box-shadow:0 2px 6px rgba(0,0,0,0.03);margin-bottom:12px;
+  transition:all 0.2s ease;
+}
+
+.card:active{box-shadow:0 4px 12px rgba(0,0,0,0.08)}
+
+.card-title{font-size:15px;font-weight:700;margin-bottom:12px;color:var(--text)}
+
+.stats-row{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin-bottom:16px}
+
+.stat{
+  background:linear-gradient(135deg,#dbeafe,#bfdbfe);
+  border-radius:10px;padding:14px;text-align:center;border:1px solid #93c5fd;
+}
+
+.stat-val{font-size:18px;font-weight:800;color:#1e40af;font-family:'Poppins',sans-serif}
+.stat-lbl{font-size:11px;font-weight:600;color:#0c4a6e;margin-top:4px;text-transform:uppercase}
+
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.table{width:100%;border-collapse:collapse;font-size:13px}
+.table th{
+  background:#f1f5f9;padding:10px;text-align:left;
+  font-weight:600;font-size:11px;color:var(--text-light);
+  text-transform:uppercase;border-bottom:2px solid var(--border);
+}
+.table td{padding:10px;border-bottom:1px solid var(--border)}
+.table tr:active{background:#f8fafc}
+
+.badge{
+  display:inline-block;padding:3px 8px;border-radius:5px;
+  font-size:10px;font-weight:600;white-space:nowrap;
+}
+
+.badge-blue{background:#dbeafe;color:#1e40af}
+.badge-green{background:#dcfce7;color:#166534}
+.badge-red{background:#fee2e2;color:#991b1b}
+
+.input-row{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap}
+.input-row input{
+  flex:1;min-width:140px;padding:11px 12px;
+  border:1.5px solid var(--border);border-radius:8px;
+  font-size:13px;font-family:monospace;
+  transition:all 0.2s;
+}
+.input-row input:focus{outline:none;border-color:var(--primary);box-shadow:0 0 0 3px rgba(37,99,235,0.1)}
+
+.btn{
+  padding:11px 16px;border:none;border-radius:8px;
+  font-weight:600;font-size:13px;cursor:pointer;
+  transition:all 0.2s ease;white-space:nowrap;
+  -webkit-touch-callout:none;user-select:none;
+}
+
+.btn-primary{background:var(--primary);color:white}
+.btn-primary:active{background:var(--primary-dark)}
+.btn-primary:disabled{opacity:0.5;cursor:not-allowed}
+
+.btn-secondary{background:var(--border);color:var(--text)}
+.btn-secondary:active{background:#cbd5e1}
+
+.info-box{
+  background:#f0f9ff;border-left:4px solid var(--primary);
+  border-radius:8px;padding:10px 12px;font-size:12px;
+  color:#0c4a6e;margin-bottom:12px;
+}
+
+.success-msg{
+  position:fixed;top:12px;right:12px;
+  background:#16a34a;color:white;padding:12px 14px;
+  border-radius:8px;box-shadow:var(--shadow-lg);
+  z-index:1000;animation:slideIn 0.3s ease;
+  font-size:12px;font-weight:600;
+}
+
+.error-msg{
+  position:fixed;top:12px;right:12px;
+  background:#dc2626;color:white;padding:12px 14px;
+  border-radius:8px;box-shadow:var(--shadow-lg);
+  z-index:1000;animation:slideIn 0.3s ease;
+  font-size:12px;font-weight:600;
+}
+
+@keyframes slideIn{from{transform:translateX(400px);opacity:0}to{transform:translateX(0);opacity:1}}
+
+.loading{text-align:center;padding:24px;color:var(--text-light);font-size:13px}
+.empty{text-align:center;padding:32px 16px;color:var(--text-light)}
+
+.mini-bar{
+  display:flex;align-items:flex-end;gap:6px;height:80px;margin:12px 0;
+}
+
+.bar-item{
+  flex:1;background:linear-gradient(180deg,var(--primary),#3b82f6);
+  border-radius:4px 4px 0 0;min-height:10px;transition:all 0.2s;
+}
+
+.bar-label{font-size:10px;color:var(--text-light);text-align:center;margin-top:4px}
+
+.modal-overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,0.5);
+  display:flex;align-items:flex-end;z-index:200;backdrop-filter:blur(2px);
+}
+
+.modal{
+  background:var(--card);width:100%;border-radius:20px 20px 0 0;
+  padding:24px 20px;padding-bottom:max(24px,env(safe-area-inset-bottom));
+  max-height:80vh;overflow-y:auto;
+}
+
+.modal-close{
+  float:right;background:var(--border);border:none;
+  color:var(--text);font-size:20px;cursor:pointer;width:32px;height:32px;
+  border-radius:50%;transition:all 0.2s;margin:-4px;padding:0;
+}
+
+.modal-close:active{background:#cbd5e1}
+
+@media(min-width:768px){
+  .app-nav{width:auto;position:relative;flex-direction:row;border-top:none;border-left:1px solid var(--border);
+    background:var(--card);padding:0;padding-left:max(0,env(safe-area-inset-left));
+    padding-right:max(0,env(safe-area-inset-right));
+  }
+  .app-container{flex-direction:row}
+  .app-content{flex:1;padding-bottom:16px}
+  .stats-row{grid-template-columns:repeat(4,1fr)}
+  .nav-btn{flex-direction:column;padding:16px 12px;min-height:auto}
+  .modal{border-radius:12px;max-width:500px;margin:auto}
+}
+
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#cbd5e1}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel">
+const { useState, useRef, useCallback, useMemo, useEffect } = React;
+
+/* ============================================================
+   USTUN NOMLARINI AVTOMATIK ANIQLASH
+   Google Sheets'dagi sarlavha shu so'zlardan birini o'z ichiga
+   olsa yetarli. O'zbek / Rus / Ingliz tillarida bo'lishi mumkin.
+   ============================================================ */
+const COLS = {
+  filial:   ['filial','филиал','branch','ofis','office'],
+  agent:    ['agent','агент','sotuvchi','menejer','manager','xodim'],
+  klient:   ['klient','mijoz','клиент','client','customer','xaridor','покупател'],
+  category: ['kategor','категор','category','tur'],
+  amount:   ['summa','сумм','sum','amount','narx','qiymat','цена','price'],
+  date:     ['sana','дата','date','vaqt']
+};
+
+function findCol(headers, keys){
+  for(let i = 0; i < headers.length; i++){
+    if(keys.some(k => headers[i].includes(k))) return i;
+  }
+  return -1;
+}
+
+/* Filial kodini chiroyli nomga aylantirish (agar mos kelsa) */
+const FILIAL_NAMES = {
+  sotuv_0:"Sotuv", andijon_01:"Andijon", fargona_02:"Farg'ona",
+  nukus_03:"Nukus", qarshi_04:"Qarshi", samarqand_05:"Samarqand",
+  sirdaryo_06:"Sirdaryo", jizzax_07:"Jizzax", toshkent_08:"Toshkent"
+};
+function prettyFilial(v){
+  if(!v) return '—';
+  return FILIAL_NAMES[v] || v;
+}
+
+/* Utilities */
+function toNum(v){
+  if(typeof v === "number") return isFinite(v) ? v : 0;
+  if(!v) return 0;
+  let s = String(v).trim().replace(/[^\d,.\-]/g, "");
+  if(!s) return 0;
+  if(s.includes(",") && s.includes(".")){
+    if(s.lastIndexOf(",") > s.lastIndexOf(".")) s = s.replace(/\./g,"").replace(",",".");
+    else s = s.replace(/,/g,"");
+  } else if(s.includes(",")){
+    const after = s.split(",").pop();
+    s = after.length === 3 ? s.replace(/,/g,"") : s.replace(",",".");
+  }
+  const n = parseFloat(s);
+  return isNaN(n) ? 0 : n;
+}
+
+function formatUSD(n){
+  if(!n) return "$0";
+  if(n >= 1e9) return "$" + (n/1e9).toFixed(1) + "B";
+  if(n >= 1e6) return "$" + (n/1e6).toFixed(1) + "M";
+  if(n >= 1e3) return "$" + (n/1e3).toFixed(1) + "k";
+  return "$" + Math.round(n).toLocaleString();
+}
+
+function getCSVUrl(sheetUrl){
+  const match = sheetUrl.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if(!match) return null;
+  const gidMatch = sheetUrl.match(/[#&?]gid=([0-9]+)/);
+  const gid = gidMatch ? `&gid=${gidMatch[1]}` : '';
+  return `https://docs.google.com/spreadsheets/d/${match[1]}/export?format=csv${gid}`;
+}
+
+/* PapaParse orqali tez va to'g'ri o'qish (ichida vergul bo'lgan
+   qiymatlarni ham to'g'ri ajratadi). Bitta jadval — bir marta o'qiladi. */
+function parseSheet(csv){
+  if(!csv) return [];
+  const parsed = Papa.parse(csv.trim(), { skipEmptyLines: true });
+  const rows = parsed.data;
+  if(!rows || rows.length < 2) return [];
+
+  const headers = rows[0].map(h => String(h || '').toLowerCase().trim());
+  const iFilial = findCol(headers, COLS.filial);
+  const iAgent  = findCol(headers, COLS.agent);
+  const iKlient = findCol(headers, COLS.klient);
+  const iCat    = findCol(headers, COLS.category);
+  const iSum    = findCol(headers, COLS.amount);
+  const iDate   = findCol(headers, COLS.date);
+  if(iSum === -1) return [];   // kamida Summa ustuni bo'lishi shart
+
+  const out = [];
+  for(let i = 1; i < rows.length; i++){
+    const p = rows[i];
+    const get = idx => idx !== -1 ? String(p[idx] || '').trim() : '';
+    const amount   = toNum(p[iSum]);
+    const filial   = get(iFilial);
+    const agent    = get(iAgent);
+    const klient   = get(iKlient);
+    const category = get(iCat);
+    const date     = get(iDate);
+    if(!filial && !agent && !klient && !category && !amount) continue; // bo'sh qator
+    out.push({
+      filial,
+      filialName: prettyFilial(filial),
+      agent:    agent    || '—',
+      klient:   klient   || '—',
+      category: category || '—',
+      amount, date
+    });
+  }
+  return out;
+}
+
+/* ============================================================
+   ASOSIY ILOVA
+   ============================================================ */
+function Dashboard(){
+  const [activeTab, setActiveTab] = useState('overview');
+  const [data, setData] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('sheet_data') || '[]'); }
+    catch(e){ return []; }
+  });
+  const [sheetUrl, setSheetUrl] = useState(localStorage.getItem('sheet_url') || '');
+  const [loading, setLoading]   = useState(false);
+  const [online, setOnline]     = useState(navigator.onLine);
+  const [lastSync, setLastSync] = useState(null);
+  const [message, setMessage]   = useState(null);
+
+  // stale closure'lardan qochish uchun ref'lar
+  const urlRef  = useRef(sheetUrl);
+  const busyRef = useRef(false);
+  const sigRef  = useRef(localStorage.getItem('sheet_sig') || '');
+  useEffect(() => { urlRef.current = sheetUrl; }, [sheetUrl]);
+
+  const showMsg = useCallback((text, type) => {
+    setMessage({ text, type });
+    setTimeout(() => setMessage(null), 2500);
+  }, []);
+
+  /* Ma'lumot yuklash — UI'ni bloklamaydi (fon rejimida ishlaydi) */
+  const loadData = useCallback(async (manual = false) => {
+    const url = urlRef.current;
+    if(!url){ if(manual) showMsg('Avval Sheets linkini kiriting', 'error'); return; }
+    if(busyRef.current) return;                 // bir vaqtda bitta so'rov
+    const csvUrl = getCSVUrl(url);
+    if(!csvUrl){ if(manual) showMsg('❌ Link noto\'g\'ri', 'error'); return; }
+
+    busyRef.current = true;
+    setLoading(true);
+    try{
+      // cache-bust: har safar yangi so'rov (eski cache bermasin)
+      const res = await fetch(csvUrl + '&_ts=' + Date.now(), { cache: 'no-store' });
+      if(!res.ok) throw new Error('Yuklashda xato (' + res.status + ')');
+      const csv = await res.text();
+
+      // O'zgarganini tekshirish — bir xil bo'lsa qayta render qilinmaydi (tez, qotmaydi)
+      const sig = csv.length + ':' + csv.slice(0, 48);
+      if(sig === sigRef.current){
+        setLastSync(new Date());
+        if(manual) showMsg('✓ Yangi ma\'lumot yo\'q', 'success');
+        return;
+      }
+
+      const rows = parseSheet(csv);
+      if(rows.length === 0){
+        if(manual) showMsg('Ma\'lumot topilmadi — ustun nomlarini tekshiring', 'error');
+        return;
+      }
+
+      sigRef.current = sig;
+      setData(rows);
+      localStorage.setItem('sheet_data', JSON.stringify(rows));
+      localStorage.setItem('sheet_url', url);
+      localStorage.setItem('sheet_sig', sig);
+      setLastSync(new Date());
+      if(manual) showMsg('✓ Yuklandi (' + rows.length + ' yozuv)', 'success');
+    }catch(err){
+      if(manual) showMsg('❌ ' + err.message, 'error');
+    }finally{
+      busyRef.current = false;
+      setLoading(false);
+    }
+  }, [showMsg]);
+
+  useEffect(() => {
+    const onOnline  = () => { setOnline(true); loadData(); };
+    const onOffline = () => setOnline(false);
+    const onVis     = () => { if(document.visibilityState === 'visible') loadData(); };
+
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    document.addEventListener('visibilitychange', onVis);   // ilova ochilganda yangilash
+
+    loadData();                                             // birinchi yuklash
+
+    // doimiy yangilash — har 60 soniyada (faqat online bo'lsa)
+    const iv = setInterval(() => {
+      if(navigator.onLine && urlRef.current) loadData();
+    }, 60 * 1000);
+
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      document.removeEventListener('visibilitychange', onVis);
+      clearInterval(iv);
+    };
+  }, [loadData]);
+
+  /* Barcha statistikani bir marta hisoblash (memo — tez ishlaydi) */
+  const stats = useMemo(() => {
+    let total = 0;
+    const byFilial = {}, byCat = {}, byAgent = {}, byKlient = {};
+    const cntFilial = {}, cntAgent = {}, cntKlient = {};
+    for(const r of data){
+      total += r.amount;
+      byFilial[r.filialName] = (byFilial[r.filialName] || 0) + r.amount;
+      cntFilial[r.filialName] = (cntFilial[r.filialName] || 0) + 1;
+      byCat[r.category] = (byCat[r.category] || 0) + r.amount;
+      byAgent[r.agent] = (byAgent[r.agent] || 0) + r.amount;
+      cntAgent[r.agent] = (cntAgent[r.agent] || 0) + 1;
+      byKlient[r.klient] = (byKlient[r.klient] || 0) + r.amount;
+      cntKlient[r.klient] = (cntKlient[r.klient] || 0) + 1;
+    }
+    const realKeys = o => Object.keys(o).filter(k => k && k !== '—');
+    return {
+      total, count: data.length,
+      byFilial, byCat, byAgent, byKlient,
+      cntFilial, cntAgent, cntKlient,
+      nAgent: realKeys(byAgent).length,
+      nKlient: realKeys(byKlient).length,
+      nFilial: realKeys(byFilial).length,
+      nCat: realKeys(byCat).length
+    };
+  }, [data]);
+
+  return (
+    <div className="app-container">
+      <div style={{flex:1, display:'flex', flexDirection:'column'}}>
+        <div className="app-header">
+          <div>
+            <div className="app-header-title">💼 Filiallar</div>
+            <div className="app-header-info">{data.length} yozuv{lastSync ? ' • ' + lastSync.toLocaleTimeString('uz') : ''}</div>
+          </div>
+          <div className="app-header-status">
+            <div className={`status-dot ${online ? 'online' : 'offline'}`}></div>
+            <span>{loading ? '⟳ Yangilanmoqda' : (online ? 'Online' : 'Offline')}</span>
+          </div>
+        </div>
+
+        <div className="app-content">
+          {activeTab === 'overview' && <OverviewTab stats={stats} data={data} />}
+          {activeTab === 'agents'   && <AgentsTab stats={stats} />}
+          {activeTab === 'clients'  && <ClientsTab stats={stats} />}
+          {activeTab === 'filials'  && <FilialsTab stats={stats} />}
+          {activeTab === 'settings' && <SettingsTab sheetUrl={sheetUrl} setSheetUrl={setSheetUrl} onLoad={() => loadData(true)} loading={loading} lastSync={lastSync} stats={stats} />}
+        </div>
+      </div>
+
+      <nav className="app-nav">
+        <button className={`nav-btn ${activeTab==='overview' ? 'active' : ''}`} onClick={() => setActiveTab('overview')}>
+          <div className="nav-icon">📊</div><div>Umumiy</div>
+        </button>
+        <button className={`nav-btn ${activeTab==='agents' ? 'active' : ''}`} onClick={() => setActiveTab('agents')}>
+          <div className="nav-icon">🧑‍💼</div><div>Agentlar</div>
+        </button>
+        <button className={`nav-btn ${activeTab==='clients' ? 'active' : ''}`} onClick={() => setActiveTab('clients')}>
+          <div className="nav-icon">👥</div><div>Klientlar</div>
+        </button>
+        <button className={`nav-btn ${activeTab==='filials' ? 'active' : ''}`} onClick={() => setActiveTab('filials')}>
+          <div className="nav-icon">🏢</div><div>Filiallar</div>
+        </button>
+        <button className={`nav-btn ${activeTab==='settings' ? 'active' : ''}`} onClick={() => setActiveTab('settings')}>
+          <div className="nav-icon">⚙️</div><div>Sozlamalar</div>
+        </button>
+      </nav>
+
+      {message && <div className={`${message.type}-msg`}>{message.text}</div>}
+    </div>
+  );
+}
+
+/* Umumiy jadval qatoridan foydalanadigan yordamchi komponent */
+function RankTable({ title, icon, byMap, cntMap, labelHead }){
+  const sorted = Object.entries(byMap).sort((a,b) => b[1] - a[1]);
+  const max = sorted.length ? sorted[0][1] : 0;
+  if(sorted.length === 0){
+    return (
+      <div className="card">
+        <div className="card-title">{icon} {title}</div>
+        <div className="empty">Ma'lumot yo'q. Sheets'da tegishli ustun bormi?</div>
+      </div>
+    );
+  }
+  return (
+    <div className="card">
+      <div className="card-title">{icon} {title}</div>
+      <div className="table-wrap">
+        <table className="table">
+          <thead>
+            <tr><th>{labelHead}</th><th>Summa</th><th>Op.</th></tr>
+          </thead>
+          <tbody>
+            {sorted.map(([name, val]) => (
+              <tr key={name}>
+                <td><strong>{name}</strong></td>
+                <td style={{fontWeight:600, color:'#dc2626'}}>{formatUSD(val)}</td>
+                <td><span className="badge badge-blue">{cntMap[name] || 0}</span></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function OverviewTab({ stats, data }){
+  const topFilial = Object.entries(stats.byFilial).sort((a,b) => b[1] - a[1]).slice(0,8);
+  const topCat = Object.entries(stats.byCat).sort((a,b) => b[1] - a[1]).slice(0,6);
+  const catTotal = topCat.reduce((s, [,v]) => s + v, 0);
+
+  return (
+    <>
+      <div className="card">
+        <div className="card-title">Statistika</div>
+        <div className="stats-row">
+          <div className="stat">
+            <div className="stat-val">{formatUSD(stats.total)}</div>
+            <div className="stat-lbl">Jami</div>
+          </div>
+          <div className="stat">
+            <div className="stat-val">{stats.count}</div>
+            <div className="stat-lbl">Yozuvlar</div>
+          </div>
+          <div className="stat">
+            <div className="stat-val">{stats.nAgent}</div>
+            <div className="stat-lbl">Agentlar</div>
+          </div>
+          <div className="stat">
+            <div className="stat-val">{stats.nKlient}</div>
+            <div className="stat-lbl">Klientlar</div>
+          </div>
+        </div>
+      </div>
+
+      {topFilial.length > 0 && (
+        <div className="card">
+          <div className="card-title">🏆 Eng katta filiallar</div>
+          <div className="mini-bar">
+            {topFilial.map(([name, val]) => (
+              <div key={name} style={{flex:1}}>
+                <div className="bar-item" style={{height: topFilial[0][1] > 0 ? (val / topFilial[0][1]) * 100 + '%' : '10%'}}></div>
+                <div className="bar-label">{name.slice(0,5)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {topCat.length > 0 && (
+        <div className="card">
+          <div className="card-title">📁 Kategoriyalar</div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead><tr><th>Kategoriya</th><th>Summa</th><th>%</th></tr></thead>
+              <tbody>
+                {topCat.map(([cat, val]) => {
+                  const pct = catTotal > 0 ? ((val / catTotal) * 100).toFixed(0) : 0;
+                  return (
+                    <tr key={cat}>
+                      <td><strong>{cat.slice(0,20)}</strong></td>
+                      <td style={{fontWeight:600}}>{formatUSD(val)}</td>
+                      <td>
+                        <div style={{display:'flex', alignItems:'center', gap:6}}>
+                          <div style={{width:40, height:6, background:'#e2e8f0', borderRadius:3, overflow:'hidden'}}>
+                            <div style={{width:pct+'%', height:'100%', background:'var(--primary)'}}></div>
+                          </div>
+                          <span style={{fontSize:'11px', minWidth:20}}>{pct}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {data.length > 0 && (
+        <div className="card">
+          <div className="card-title">So'ngi operatsiyalar</div>
+          <div className="table-wrap">
+            <table className="table">
+              <thead>
+                <tr><th>Agent</th><th>Klient</th><th>Summa</th></tr>
+              </thead>
+              <tbody>
+                {data.slice(-10).reverse().map((r, i) => (
+                  <tr key={i}>
+                    <td><span className="badge badge-blue">{r.agent.slice(0,8)}</span></td>
+                    <td style={{fontSize:'12px'}}>{r.klient.slice(0,12)}</td>
+                    <td style={{fontWeight:600, color:'#dc2626'}}>{formatUSD(r.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function AgentsTab({ stats }){
+  return <RankTable title="Agentlar" icon="🧑‍💼" byMap={stats.byAgent} cntMap={stats.cntAgent} labelHead="Agent" />;
+}
+
+function ClientsTab({ stats }){
+  return <RankTable title="Klientlar" icon="👥" byMap={stats.byKlient} cntMap={stats.cntKlient} labelHead="Klient" />;
+}
+
+function FilialsTab({ stats }){
+  return <RankTable title="Filiallar" icon="🏢" byMap={stats.byFilial} cntMap={stats.cntFilial} labelHead="Filial" />;
+}
+
+function SettingsTab({ sheetUrl, setSheetUrl, onLoad, loading, lastSync, stats }){
+  return (
+    <>
+      <div className="card">
+        <div className="card-title">🔗 Google Sheets Ulash</div>
+        <div className="info-box">
+          ✓ Ulashish → "Havolaga ega har kim ko'ra oladi" → Link nusxa
+        </div>
+        <div className="input-row">
+          <input
+            type="text"
+            placeholder="https://docs.google.com/spreadsheets/d/..."
+            value={sheetUrl}
+            onChange={(e) => setSheetUrl(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && onLoad()}
+          />
+        </div>
+        <button className="btn btn-primary" onClick={onLoad} disabled={!sheetUrl.trim() || loading} style={{width:'100%'}}>
+          {loading ? '⏳ ...' : '🔌 Yuklash'}
+        </button>
+        {lastSync && (
+          <div className="info-box" style={{marginTop:12}}>
+            ✓ Oxirgi yangilash: {lastSync.toLocaleTimeString('uz')}
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="card-title">📋 Jadval formati</div>
+        <div style={{fontSize:'12px', color:'var(--text-light)', lineHeight:'1.6'}}>
+          <div style={{marginBottom:8}}>Tavsiya etilgan ustunlar:</div>
+          <div style={{background:'#f1f5f9', padding:8, borderRadius:6, fontFamily:'monospace', fontSize:'11px', marginBottom:12}}>
+            Filial, Agent, Klient, Kategoriya, Summa, Sana
+          </div>
+          <div>• Filial (филиал, branch) — ixtiyoriy</div>
+          <div>• Agent (агент, sotuvchi) — ixtiyoriy</div>
+          <div>• Klient (mijoz, клиент) — ixtiyoriy</div>
+          <div>• Kategoriya (категория) — ixtiyoriy</div>
+          <div>• <strong>Summa</strong> (сумма, sum) — <strong>majburiy</strong></div>
+          <div>• Sana (дата, date) — ixtiyoriy</div>
+          <div style={{marginTop:8, fontSize:'11px'}}>Ustun nomlari qanday yozilishidan qat'i nazar (katta/kichik harf, rus/ingliz) avtomatik tanib olinadi.</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="card-title">ℹ️ Ma'lumot</div>
+        <div style={{fontSize:'12px', color:'var(--text-light)', lineHeight:'1.6'}}>
+          <div>✓ Har 60 soniyada avtomatik yangilanadi</div>
+          <div>✓ Ilova ochilganda darrov yangilanadi</div>
+          <div>✓ Offline: oxirgi ma'lumot cache'dan ko'rinadi</div>
+          <div>✓ {stats.nAgent} agent • {stats.nKlient} klient • {stats.nFilial} filial</div>
+          <div>✓ PWA — telefonga o'rnatish mumkin</div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+ReactDOM.render(<Dashboard />, document.getElementById('root'));
+
+/* Service Worker — app shell offline ishlashi uchun (Sheets har doim tarmoqdan) */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    const sw = `
+const CACHE = 'filiallar-v2';
+self.addEventListener('install', e => { self.skipWaiting(); });
+self.addEventListener('activate', e => {
+  e.waitUntil(caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k)))));
+  self.clients.claim();
+});
+self.addEventListener('fetch', e => {
+  const req = e.request;
+  if(req.method !== 'GET') return;
+  const url = new URL(req.url);
+  if(url.origin !== self.location.origin) return;   // Google Sheets — doim tarmoqdan (yangi)
+  e.respondWith(
+    fetch(req).then(r => { const c = r.clone(); caches.open(CACHE).then(ca => ca.put(req, c)); return r; })
+      .catch(() => caches.match(req))
+  );
+});
+`;
+    const blob = new Blob([sw], { type: 'application/javascript' });
+    navigator.serviceWorker.register(URL.createObjectURL(blob)).catch(() => {});
+  });
+}
+</script>
+</body>
+</html>
