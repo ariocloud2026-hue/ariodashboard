@@ -505,23 +505,50 @@ function FilialKesmi({ prixod, xarajat }){
     if(!v) return;
     try{
       const wb = XLSX.utils.book_new();
+      const R = Math.round;
+      // 0) Umumiy — som / $ ostatka
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
         ["FILIAL", curName], [],
         ["", "So'm", "USD ($)"],
-        ["Kirim",  Math.round(v.kirimSom),  Math.round(v.kirim)],
-        ["Chiqim", Math.round(v.chiqimSom), Math.round(v.chiqim)],
-        ["Ostatka",Math.round(v.ostatkaSom),Math.round(v.ostatka)]
+        ["Kirim",   R(v.kirimSom),   R(v.kirim)],
+        ["Chiqim",  R(v.chiqimSom),  R(v.chiqim)],
+        ["Ostatka", R(v.ostatkaSom), R(v.ostatka)]
       ]), "Umumiy");
+      // 1) Ostatka — to'lov turi (Naqd/Karta/Perechisleniye) + kurs
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-        ["To'lov turi","Kirim so'm","Kirim $","Chiqim so'm","Chiqim $","Ostatka so'm","Ostatka $"],
-        ...v.typs.map(t=>[t.typ,Math.round(t.kSom),Math.round(t.kUsd),Math.round(t.cSom),Math.round(t.cUsd),Math.round(t.oSom),Math.round(t.oUsd)])
-      ]), "Tolov-turi");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Oy","Kirim so'm","Kirim $","Yozuv"], ...v.kMon.map(m=>[m.oy,Math.round(m.som),Math.round(m.usd),m.cnt])]), "Kirim-Oy");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Oy","Chiqim so'm","Chiqim $","Yozuv"], ...v.xMon.map(m=>[m.oy,Math.round(m.som),Math.round(m.usd),m.cnt])]), "Chiqim-Oy");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Agent","Kirim $","Yozuv"], ...v.agents.map(a=>[a.n,Math.round(a.usd),a.cnt])]), "Kirim-Agent");
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Kategoriya","Chiqim $","Yozuv"], ...v.cats.map(c=>[c.n,Math.round(c.usd),c.cnt])]), "Chiqim-Kategoriya");
+        ["To'lov turi","Kirim so'm","Kirim $","Chiqim so'm","Chiqim $","Ostatka so'm","Ostatka $","O'rtacha kurs"],
+        ...v.typs.map(t=>[t.typ,R(t.kSom),R(t.kUsd),R(t.cSom),R(t.cUsd),R(t.oSom),R(t.oUsd), t.kUsd?R(t.kSom/t.kUsd):(t.cUsd?R(t.cSom/t.cUsd):0)]),
+        ["JAMI",R(v.kirimSom),R(v.kirim),R(v.chiqimSom),R(v.chiqim),R(v.ostatkaSom),R(v.ostatka), v.kirim?R(v.kirimSom/v.kirim):0]
+      ]), "Ostatka-Tolov");
+      // to'lov turlari (dinamik ustunlar)
+      const payTypes = [...new Set([...v.k, ...v.x].map(r=>String(r.typ||"—").trim()||"—"))];
+      const crossAoa = (rows, key, label) => {
+        const m = {};
+        rows.forEach(r=>{
+          const e=String(r[key]||"—").trim()||"—", mo=String(r.month||"—"), t=String(r.typ||"—").trim()||"—";
+          const ms=(r.ms!=null?r.ms:9e15), kk=e+"|||"+mo;
+          if(!m[kk]) m[kk]={e,mo,ms,typs:{}};
+          if(!m[kk].typs[t]) m[kk].typs[t]={som:0,usd:0};
+          m[kk].typs[t].som+=r.sum||0; m[kk].typs[t].usd+=r.usd||0;
+          if(ms<m[kk].ms) m[kk].ms=ms;
+        });
+        const header=[label,"Oy"]; payTypes.forEach(t=>header.push(t+" so'm",t+" $")); header.push("Jami so'm","Jami $");
+        const arr=Object.values(m).sort((a,b)=> a.e.localeCompare(b.e) || a.ms-b.ms);
+        const aoa=[header];
+        arr.forEach(o=>{ const row=[o.e,o.mo]; let js=0,ju=0; payTypes.forEach(t=>{ const c=o.typs[t]||{som:0,usd:0}; row.push(R(c.som),R(c.usd)); js+=c.som; ju+=c.usd; }); row.push(R(js),R(ju)); aoa.push(row); });
+        return aoa;
+      };
+      // 2) Kirim: Klient × Oy × to'lov turi, Agent × Oy × to'lov turi
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(crossAoa(v.k,"client","Klient")), "Kirim-Klient-Oy");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(crossAoa(v.k,"manager","Agent")), "Kirim-Agent-Oy");
+      // 3) Chiqim: Kategoriya × Oy × to'lov turi
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(crossAoa(v.x,"cat","Kategoriya")), "Chiqim-Kat-Oy");
+      // 4) Oyma-oy jami
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Oy","Kirim so'm","Kirim $","Yozuv"], ...v.kMon.map(m=>[m.oy,R(m.som),R(m.usd),m.cnt])]), "Kirim-Oy");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Oy","Chiqim so'm","Chiqim $","Yozuv"], ...v.xMon.map(m=>[m.oy,R(m.som),R(m.usd),m.cnt])]), "Chiqim-Oy");
+      // 5) To'liq yozuvlar
       const mk = (rows,name)=>{ const a=[["Sana","Oy","Klient / FIO","Agent","Tip","Kategoriya","Izoh","Valyuta","Kurs","Summa","Summa $"]];
-        rows.forEach(r=>a.push([r.dayLabel||"", r.month||"", r.client||r.fio||"", r.manager||"", r.typ||"", r.cat||"", r.desc||"", r.cur||"", Math.round(r.rate||0), r.sum||0, r.usd||0]));
+        rows.forEach(r=>a.push([r.dayLabel||"", r.month||"", r.client||r.fio||"", r.manager||"", r.typ||"", r.cat||"", r.desc||"", r.cur||"", R(r.rate||0), r.sum||0, r.usd||0]));
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), name); };
       mk(v.k,"Kirim"); mk(v.x,"Chiqim");
       XLSX.writeFile(wb, "Filial_"+String(curName).replace(/\s+/g,"_")+".xlsx");
