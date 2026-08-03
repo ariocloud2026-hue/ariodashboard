@@ -452,7 +452,7 @@ function SpravochnikView({ rows }){
 
 /* ─── Filial kesmi: bitta filial bo'yicha dashboard (Kirim/Chiqim/Ostatka) ── */
 function FilialKesmi({ prixod, xarajat }){
-  const [fil, setFil] = useState(null);
+  const [fil, setFil] = useState("*");
   const [period, setPeriod] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -466,7 +466,8 @@ function FilialKesmi({ prixod, xarajat }){
     return [...s].sort((a,b)=>{ const ia=FIL_ORDER.indexOf(a),ib=FIL_ORDER.indexOf(b); if(ia!==-1||ib!==-1) return (ia===-1?99:ia)-(ib===-1?99:ib); return a.localeCompare(b); });
   }, [prixod, xarajat]);
 
-  const cur = (fil && filials.includes(fil)) ? fil : (filials[0]||null);
+  const cur = (fil==="*" || (fil && filials.includes(fil))) ? fil : "*";
+  const curName = cur==="*" ? "Barchasi" : cur;
 
   const v = useMemo(()=>{
     if(!cur) return null;
@@ -486,11 +487,18 @@ function FilialKesmi({ prixod, xarajat }){
       if(period==="year")  return d.getFullYear()===now.getFullYear();
       return true;
     };
-    const k = prixod.filter(r=>String(r.flabel||r.filial||"")===cur && inP(r));
-    const x = xarajat.filter(r=>String(r.flabel||r.filial||"")===cur && inP(r));
+    const k = prixod.filter(r=>(cur==="*" || String(r.flabel||r.filial||"")===cur) && inP(r));
+    const x = xarajat.filter(r=>(cur==="*" || String(r.flabel||r.filial||"")===cur) && inP(r));
     const kirim = k.reduce((s,r)=>s+(r.usd||0),0), chiqim = x.reduce((s,r)=>s+(r.usd||0),0);
+    const kirimSom = k.reduce((s,r)=>s+(r.sum||0),0), chiqimSom = x.reduce((s,r)=>s+(r.sum||0),0);
     const grp = (rows,key)=>{ const m={}; rows.forEach(r=>{ const g=String(r[key]||"—").trim()||"—"; if(!m[g])m[g]={n:g,usd:0,cnt:0}; m[g].usd+=r.usd||0; m[g].cnt++; }); return Object.values(m).sort((a,b)=>b.usd-a.usd); };
-    return { k, x, kirim, chiqim, ostatka:kirim-chiqim, agents:grp(k,"manager"), cats:grp(x,"cat") };
+    const typM = {};
+    const bt = (rows,which)=>rows.forEach(r=>{ const t=String(r.typ||"—").trim()||"—"; if(!typM[t])typM[t]={typ:t,kSom:0,kUsd:0,cSom:0,cUsd:0}; if(which==="k"){typM[t].kSom+=r.sum||0;typM[t].kUsd+=r.usd||0;}else{typM[t].cSom+=r.sum||0;typM[t].cUsd+=r.usd||0;} });
+    bt(k,"k"); bt(x,"c");
+    const typs = Object.values(typM).map(t=>({...t,oSom:t.kSom-t.cSom,oUsd:t.kUsd-t.cUsd})).sort((a,b)=>(b.kUsd+b.cUsd)-(a.kUsd+a.cUsd));
+    const monAgg = (rows)=>{ const m={}; rows.forEach(r=>{ const mo=String(r.month||"—"); const ms=(r.ms!=null?r.ms:9e15); if(!m[mo])m[mo]={oy:mo,som:0,usd:0,cnt:0,ms}; m[mo].som+=r.sum||0; m[mo].usd+=r.usd||0; m[mo].cnt++; if(ms<m[mo].ms)m[mo].ms=ms; }); return Object.values(m).sort((a,b)=>a.ms-b.ms); };
+    const kMon = monAgg(k), xMon = monAgg(x);
+    return { k, x, kirim, chiqim, ostatka:kirim-chiqim, kirimSom, chiqimSom, ostatkaSom:kirimSom-chiqimSom, agents:grp(k,"manager"), cats:grp(x,"cat"), typs, kMon, xMon };
   }, [cur, prixod, xarajat, period, from, to]);
 
   const exportXl = () => {
@@ -498,15 +506,25 @@ function FilialKesmi({ prixod, xarajat }){
     try{
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
-        ["FILIAL", cur], [], ["Kirim $", Math.round(v.kirim)], ["Chiqim $", Math.round(v.chiqim)], ["Ostatka $", Math.round(v.ostatka)]
+        ["FILIAL", curName], [],
+        ["", "So'm", "USD ($)"],
+        ["Kirim",  Math.round(v.kirimSom),  Math.round(v.kirim)],
+        ["Chiqim", Math.round(v.chiqimSom), Math.round(v.chiqim)],
+        ["Ostatka",Math.round(v.ostatkaSom),Math.round(v.ostatka)]
       ]), "Umumiy");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+        ["To'lov turi","Kirim so'm","Kirim $","Chiqim so'm","Chiqim $","Ostatka so'm","Ostatka $"],
+        ...v.typs.map(t=>[t.typ,Math.round(t.kSom),Math.round(t.kUsd),Math.round(t.cSom),Math.round(t.cUsd),Math.round(t.oSom),Math.round(t.oUsd)])
+      ]), "Tolov-turi");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Oy","Kirim so'm","Kirim $","Yozuv"], ...v.kMon.map(m=>[m.oy,Math.round(m.som),Math.round(m.usd),m.cnt])]), "Kirim-Oy");
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Oy","Chiqim so'm","Chiqim $","Yozuv"], ...v.xMon.map(m=>[m.oy,Math.round(m.som),Math.round(m.usd),m.cnt])]), "Chiqim-Oy");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Agent","Kirim $","Yozuv"], ...v.agents.map(a=>[a.n,Math.round(a.usd),a.cnt])]), "Kirim-Agent");
       XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Kategoriya","Chiqim $","Yozuv"], ...v.cats.map(c=>[c.n,Math.round(c.usd),c.cnt])]), "Chiqim-Kategoriya");
-      const mk = (rows,name)=>{ const a=[["Sana","Klient / FIO","Agent","Tip","Kategoriya","Valyuta","Kurs","Summa","Summa $"]];
-        rows.forEach(r=>a.push([r.dayLabel||"", r.client||r.fio||"", r.manager||"", r.typ||"", r.cat||"", r.cur||"", Math.round(r.rate||0), r.sum||0, r.usd||0]));
+      const mk = (rows,name)=>{ const a=[["Sana","Oy","Klient / FIO","Agent","Tip","Kategoriya","Izoh","Valyuta","Kurs","Summa","Summa $"]];
+        rows.forEach(r=>a.push([r.dayLabel||"", r.month||"", r.client||r.fio||"", r.manager||"", r.typ||"", r.cat||"", r.desc||"", r.cur||"", Math.round(r.rate||0), r.sum||0, r.usd||0]));
         XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(a), name); };
       mk(v.k,"Kirim"); mk(v.x,"Chiqim");
-      XLSX.writeFile(wb, "Filial_"+String(cur).replace(/\s+/g,"_")+".xlsx");
+      XLSX.writeFile(wb, "Filial_"+String(curName).replace(/\s+/g,"_")+".xlsx");
     }catch(e){}
   };
 
@@ -585,6 +603,7 @@ function FilialKesmi({ prixod, xarajat }){
           <button onClick={exportXl} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"7px 13px",fontSize:12,fontWeight:700,borderRadius:8,border:"1px solid #bbf7d0",background:"#f0fdf4",color:"#15803d",cursor:"pointer",whiteSpace:"nowrap"}}>📥 Excel yuklash</button>
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          <button onClick={()=>setFil("*")} style={{border:"1px solid "+(cur==="*"?"#0e7490":"#e2e8f0"),background:cur==="*"?"#0e7490":"#fff",color:cur==="*"?"#fff":"#475569",borderRadius:20,padding:"6px 15px",fontSize:12.5,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>🌐 Barchasi</button>
           {filials.map(f=>(
             <button key={f} onClick={()=>setFil(f)} style={{border:"1px solid "+(cur===f?"#0e7490":"#e2e8f0"),background:cur===f?"#0e7490":"#fff",color:cur===f?"#fff":"#475569",borderRadius:20,padding:"6px 15px",fontSize:12.5,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{f}</button>
           ))}
@@ -607,22 +626,61 @@ function FilialKesmi({ prixod, xarajat }){
         <>
           <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:11,marginBottom:12}}>
             {[
-              {l:"Kirim",  val:v.kirim,  clr:"#059669", bg:"linear-gradient(145deg,#ecfdf5,#d1fae5)", bd:"#a7f3d0", ic:"📥"},
-              {l:"Chiqim", val:v.chiqim, clr:"#dc2626", bg:"linear-gradient(145deg,#fef2f2,#fee2e2)", bd:"#fecaca", ic:"📤"},
-              {l:"Ostatka",val:v.ostatka,clr:v.ostatka>=0?"#0369a1":"#b45309", bg:v.ostatka>=0?"linear-gradient(145deg,#eff6ff,#dbeafe)":"linear-gradient(145deg,#fffbeb,#fef3c7)", bd:v.ostatka>=0?"#bfdbfe":"#fde68a", ic:v.ostatka>=0?"💰":"⚠️"},
+              {l:"Kirim",  val:v.kirim,  som:v.kirimSom,  clr:"#059669", bg:"linear-gradient(145deg,#ecfdf5,#d1fae5)", bd:"#a7f3d0", ic:"📥"},
+              {l:"Chiqim", val:v.chiqim, som:v.chiqimSom, clr:"#dc2626", bg:"linear-gradient(145deg,#fef2f2,#fee2e2)", bd:"#fecaca", ic:"📤"},
+              {l:"Ostatka",val:v.ostatka,som:v.ostatkaSom,clr:v.ostatka>=0?"#0369a1":"#b45309", bg:v.ostatka>=0?"linear-gradient(145deg,#eff6ff,#dbeafe)":"linear-gradient(145deg,#fffbeb,#fef3c7)", bd:v.ostatka>=0?"#bfdbfe":"#fde68a", ic:v.ostatka>=0?"💰":"⚠️"},
             ].map((c,i)=>(
               <div key={i} className="kpi-card" style={{background:c.bg,border:"1px solid "+c.bd,borderRadius:14,padding:"14px 16px",boxShadow:"var(--shadow-sm)"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-                  <span style={{fontSize:11,fontWeight:700,color:c.clr,textTransform:"uppercase",letterSpacing:".3px"}}>{cur} · {c.l}</span>
+                  <span style={{fontSize:11,fontWeight:700,color:c.clr,textTransform:"uppercase",letterSpacing:".3px"}}>{curName} · {c.l}</span>
                   <span style={{fontSize:18}}>{c.ic}</span>
                 </div>
                 <div style={{fontSize:24,fontWeight:800,color:c.clr,fontVariantNumeric:"tabular-nums",letterSpacing:"-0.02em"}}>{f2(c.val)}</div>
+                <div style={{fontSize:12.5,fontWeight:600,color:"#64748b",marginTop:2}}>{som(c.som)} so'm</div>
               </div>
             ))}
           </div>
           <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
             {breakTbl("Kirim — agentlar kesmida","📥",v.agents,"#059669","Agent")}
             {breakTbl("Chiqim — kategoriyalar kesmida","📤",v.cats,"#dc2626","Kategoriya")}
+          </div>
+          <div className="fcard" style={{background:"#fff",borderRadius:13,border:bdr,overflow:"hidden",boxShadow:"var(--shadow-sm)",marginTop:12}}>
+            <div style={{padding:"11px 15px",borderBottom:bdr,background:"linear-gradient(135deg,#f8fafc,#eef2ff)",fontWeight:800,fontSize:13,color:"#0f172a"}}>💳 To'lov turi kesmida — Kirim / Chiqim / Ostatka</div>
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+                <thead>
+                  <tr style={{background:"#f8fafc"}}>
+                    {["To'lov turi","Kirim $","Chiqim $","Ostatka $","Kirim so'm","Chiqim so'm","Ostatka so'm"].map((h,i)=>(
+                      <th key={i} style={{padding:"8px 11px",textAlign:i?"right":"left",fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:".3px",borderBottom:"2px solid #e2e8f0",whiteSpace:"nowrap"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {v.typs.length===0 ? <tr><td colSpan={7} style={{padding:20,textAlign:"center",color:"#cbd5e1"}}>—</td></tr> :
+                   v.typs.map((t,i)=>(
+                    <tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
+                      <td style={{padding:"8px 11px",fontWeight:700,color:"#1e293b"}}>{t.typ}</td>
+                      <td style={{padding:"8px 11px",textAlign:"right",color:"#059669",fontWeight:600}}>{f2(t.kUsd)}</td>
+                      <td style={{padding:"8px 11px",textAlign:"right",color:"#dc2626",fontWeight:600}}>{f2(t.cUsd)}</td>
+                      <td style={{padding:"8px 11px",textAlign:"right",color:t.oUsd>=0?"#0369a1":"#b45309",fontWeight:800}}>{f2(t.oUsd)}</td>
+                      <td style={{padding:"8px 11px",textAlign:"right",color:"#94a3b8"}}>{som(t.kSom)}</td>
+                      <td style={{padding:"8px 11px",textAlign:"right",color:"#94a3b8"}}>{som(t.cSom)}</td>
+                      <td style={{padding:"8px 11px",textAlign:"right",color:"#64748b",fontWeight:600}}>{som(t.oSom)}</td>
+                    </tr>))}
+                </tbody>
+                <tfoot>
+                  <tr style={{background:"#f8fafc",fontWeight:800,borderTop:"2px solid #e2e8f0"}}>
+                    <td style={{padding:"8px 11px"}}>JAMI</td>
+                    <td style={{padding:"8px 11px",textAlign:"right",color:"#059669"}}>{f2(v.kirim)}</td>
+                    <td style={{padding:"8px 11px",textAlign:"right",color:"#dc2626"}}>{f2(v.chiqim)}</td>
+                    <td style={{padding:"8px 11px",textAlign:"right",color:v.ostatka>=0?"#0369a1":"#b45309"}}>{f2(v.ostatka)}</td>
+                    <td style={{padding:"8px 11px",textAlign:"right",color:"#64748b"}}>{som(v.kirimSom)}</td>
+                    <td style={{padding:"8px 11px",textAlign:"right",color:"#64748b"}}>{som(v.chiqimSom)}</td>
+                    <td style={{padding:"8px 11px",textAlign:"right",color:"#64748b"}}>{som(v.ostatkaSom)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
           {recTbl("Kirim yozuvlari (to'liq)","📥",v.k,"kirim")}
           {recTbl("Chiqim yozuvlari (to'liq)","📤",v.x,"chiqim")}
