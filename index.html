@@ -1060,6 +1060,16 @@ function exportDashboardXlsx({ groupsArr, fils, cx, cT, fT, grand, filteredData,
   ];
   XLSX.utils.book_append_sheet(wb, ws1, "Kategoriya×Filial");
 
+  /* ── Sheet: Kategoriya × Oy (oylik dinamika) ── */
+  const xMset={}; filteredData.forEach(r=>{ if(r.month) xMset[r.month]=(r.ms!=null?r.ms:9e15); });
+  const xMonths=Object.keys(xMset).sort((a,b)=>xMset[a]-xMset[b]);
+  const catMonth={}; filteredData.forEach(r=>{ const c=(r.cat||"—"), m=r.month||"—"; if(!catMonth[c])catMonth[c]={}; catMonth[c][m]=(catMonth[c][m]||0)+(r.usd||0); });
+  const catL=Object.keys(catMonth).sort((a,b)=>{let sa=0,sb=0;xMonths.forEach(m=>{sa+=catMonth[a][m]||0;sb+=catMonth[b][m]||0;});return sb-sa;});
+  const aoaKO=[["Kategoriya",...xMonths,"JAMI"]];
+  catL.forEach(c=>{let tot=0;const row=[c];xMonths.forEach(m=>{const vv=catMonth[c][m]||0;row.push(Math.round(vv));tot+=vv;});row.push(Math.round(tot));aoaKO.push(row);});
+  const jKO=["JAMI"];let gKO=0;xMonths.forEach(m=>{let sm=0;catL.forEach(c=>sm+=catMonth[c][m]||0);jKO.push(Math.round(sm));gKO+=sm;});jKO.push(Math.round(gKO));aoaKO.push(jKO);
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoaKO), "Kategoriya×Oy");
+
   /* ── Sheet 2: Raw filtered rows ── */
   if(filteredData.length > 0){
     const rawData = filteredData.map(r => ({
@@ -4837,8 +4847,6 @@ function App(){
                   </span>}
                 </div>
                 <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                  <button disabled={!filteredPrixodData.length} onClick={()=>filteredPrixodData.length&&setPrixodFilM({flabel:"Umumiy — barcha filiallar",rows:filteredPrixodData})}
-                    style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid #ddd6fe",background:"linear-gradient(135deg,#7c3aed,#6366f1)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>🌐 Umumiy</button>
                   <button disabled={!filteredPrixodData.length}
                     onClick={()=>{
                       if(!filteredPrixodData.length) return;
@@ -4857,6 +4865,14 @@ function App(){
                       ws["!merges"]=[{s:{r:0,c:0},e:{r:0,c:cc-1}}];
                       ws["!cols"]=[{wch:25},...pFils.map(()=>({wch:13})),{wch:14}];
                       XLSX.utils.book_append_sheet(wb,ws,"AgentxFilial");
+                      const pMset={}; filteredPrixodData.forEach(r=>{ if(r.month) pMset[r.month]=(r.ms!=null?r.ms:9e15); });
+                      const pMonths=Object.keys(pMset).sort((a,b)=>pMset[a]-pMset[b]);
+                      const agMonth={}; filteredPrixodData.forEach(r=>{ const a2=(r.manager||"—"), m=r.month||"—"; if(!agMonth[a2])agMonth[a2]={}; agMonth[a2][m]=(agMonth[a2][m]||0)+(r.usd||0); });
+                      const agList=Object.keys(agMonth).sort((a,b)=>{let sa=0,sb=0;pMonths.forEach(m=>{sa+=agMonth[a][m]||0;sb+=agMonth[b][m]||0;});return sb-sa;});
+                      const aoaAO=[["Agent",...pMonths,"JAMI"]];
+                      agList.forEach(a2=>{let tot=0;const row=[a2];pMonths.forEach(m=>{const vv=agMonth[a2][m]||0;row.push(Math.round(vv));tot+=vv;});row.push(Math.round(tot));aoaAO.push(row);});
+                      const jAO=["JAMI"];let gAO=0;pMonths.forEach(m=>{let sm=0;agList.forEach(a2=>sm+=agMonth[a2][m]||0);jAO.push(Math.round(sm));gAO+=sm;});jAO.push(Math.round(gAO));aoaAO.push(jAO);
+                      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoaAO),"Agent×Oy");
                       const ws2=XLSX.utils.json_to_sheet(filteredPrixodData.map(r=>({Sana:r.dayLabel||"",Oy:r.month||"",Filial:r.flabel||"",Agent:r.manager||"",Klient:r.client||"","Tip Oplata":r.typ||"",Kategoriya:r.cat||"",Valyuta:r.cur||"",Kurs:Math.round(r.rate||0),Summa:r.sum||0,"Summa $":r.usd||0})));
                       XLSX.utils.book_append_sheet(wb,ws2,"Yozuvlar");
                       XLSX.writeFile(wb,safeName(isDateFiltered?"Filtrlangan_prixod":"Agent_prixod")+".xlsx");
@@ -4987,8 +5003,6 @@ function App(){
                   </span>}
                 </div>
                 <div style={{display:"flex", gap:6, alignItems:"center"}}>
-                  <button onClick={()=>data.length&&setFilM({filial:"*",flabel:"Umumiy — barcha filiallar"})} disabled={!data.length}
-                    style={{display:"flex",alignItems:"center",gap:5,padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid #ddd6fe",background:"linear-gradient(135deg,#7c3aed,#6366f1)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>🌐 Umumiy</button>
                   {cats.length > 0 && !isMobile&&(
                     <button onClick={() => setShowGrpEd(true)}
                       style={{display:"flex", alignItems:"center", gap:5, padding:"5px 11px", fontSize:11,
