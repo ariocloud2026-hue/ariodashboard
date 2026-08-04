@@ -3922,8 +3922,8 @@ function App(){
   const [sheetsStatus,setSheetsStatus]=useState("idle"); // idle|loading|ok|err
   const [sheetsErr,  setSheetsErr]  = useState("");
   const [lastUpdated,setLastUpdated]=useState(null);
-  const [autoRefresh,setAutoRefresh]=useState(false);
-  const [refreshSec, setRefreshSec] =useState(300);
+  const [autoRefresh,setAutoRefresh]=useState(true);   // doimiy avtomatik yangilash (kodda yoqilgan)
+  const [refreshSec, setRefreshSec] =useState(120);
   const [countdown,  setCountdown]  =useState(0);
   /* ── Diller / Postavshik (raw jadval) ── */
   const [dillerData, setDillerData] = useState([]);
@@ -3942,6 +3942,7 @@ function App(){
   const [prixodSi,     setPrixodSi]     = useState(null);
   /* ── Active tab ── */
   const [activeTab,    setActiveTab]    = useState("filkesmi"); // birinchi: Filial kesmi
+  const [pxSub,        setPxSub]        = useState("prixod");   // "prixod" | "xarajat"
   /* ── Refs ── */
   const fRef       = useRef();
   const pRef       = useRef(); // prixod file input
@@ -3981,7 +3982,7 @@ function App(){
       if(!rows.length){ setPrixodErr("Prixod ma'lumoti topilmadi"); setBusy(false); return; }
       setPrixodData(rows); setPrixodStatus("ok");
       setPrixodSi({ found: found.length ? found.map(n=>LB[n]||n) : Object.keys(sheets) });
-      if(!activeTab||activeTab==="xarajat") setActiveTab(data.length?"kassa":"prixod");
+      if(!activeTab||activeTab==="xarajat") setActiveTab("filkesmi");
     } catch(e){ setPrixodErr("Xato: "+e.message); }
     setBusy(false);
   }, [data.length, activeTab]);
@@ -4287,7 +4288,7 @@ function App(){
 
         <div style={{display:"flex",alignItems:"center",gap:7}}>
           {/* Manual refresh for sheets */}
-          {srcMode==="sheets"&&sheetsStatus==="ok"&&(
+          {false&&srcMode==="sheets"&&sheetsStatus==="ok"&&(
             <button onClick={()=>{loadFromSheets(sheetsUrl);if(prixodId)loadPrixodFromSheets(prixodUrl);}}
               disabled={sheetsStatus==="loading"}
               title="Ma'lumotlarni yangilash"
@@ -4457,7 +4458,7 @@ function App(){
             <div style={{flex:1}}/>
             <button onClick={()=>pRef.current.click()}
               style={{padding:"4px 10px",fontSize:11,borderRadius:7,border:"1px solid #bbf7d0",background:"#fff",color:"#059669",cursor:"pointer"}}>📂 Qayta yuklash</button>
-            <button onClick={()=>{setPrixodData([]);setPrixodStatus("idle");if(activeTab==="prixod"||activeTab==="kassa")setActiveTab("xarajat");}}
+            <button onClick={()=>{setPrixodData([]);setPrixodStatus("idle");if(activeTab==="px"){setPxSub("xarajat");}}}
               style={{padding:"4px 8px",fontSize:11,borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",cursor:"pointer"}}>✕</button>
           </div>
         )}
@@ -4500,9 +4501,9 @@ function App(){
         {data.length > 0 && (
           <>
             {/* KPI cards — faqat Xarajat va Prixod bo'limlarida */}
-            {(activeTab==="xarajat"||activeTab==="prixod") && (
+            {activeTab==="px" && (
             <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:12}}>
-              {(activeTab==="prixod"&&prixodData.length>0 ? [
+              {(pxSub==="prixod"&&prixodData.length>0 ? [
                 {l:"Jami kirim", v:f2(grandP), hi:true, ic:"📈", ac:"#059669"},
                 {l:"Faol filiallar", v:pFils.length, ic:"🏢", ac:"#7c3aed"},
                 {l:"Agentlar", v:pAgents.length, ic:"🤝", ac:"#d97706"},
@@ -4533,10 +4534,8 @@ function App(){
                 {[
                   {id:"filkesmi",ic:"📍",l:"Filial kesmi",cnt:null,clr:"#0e7490",disabled:!(prixodData.length||data.length)},
                   {id:"kassa",  ic:"💰",l:"Kassa xisobi",cnt:null,clr:"#7c3aed",disabled:!data.length&&!prixodData.length},
-                  {id:"prixod", ic:"📈",l:"Prixod",cnt:filteredPrixodData.length,clr:"#059669",disabled:!prixodData.length},
-                  {id:"xarajat",ic:"📉",l:"Xarajat",cnt:filteredData.length,clr:"#dc2626",disabled:!data.length},
-                  {id:"diller", ic:"🤝",l:"Diller",cnt:dillerData.length>1?dillerData.length-1:null,clr:"#0891b2",disabled:false},
-                  {id:"postavshik",ic:"🚚",l:"Postavshik",cnt:postData.length>1?postData.length-1:null,clr:"#c2410c",disabled:false},
+                  {id:"px", ic:"📊",l:"Prixod / Xarajat",cnt:null,clr:"#059669",disabled:!(prixodData.length||data.length)},
+                  {id:"dilpost",ic:"🤝",l:"Diller / Postav.",cnt:null,clr:"#0891b2",disabled:false},
                   {id:"spravochnik",ic:"📇",l:"Klientlar",cnt:prixodData.length?[...new Set(prixodData.map(r=>String(r.client||'').trim()).filter(Boolean))].length:null,clr:"#4338ca",disabled:!prixodData.length},
                 ].map((t,i)=>(
                   <button key={t.id}
@@ -4562,7 +4561,7 @@ function App(){
             )}
 
             {/* ── Mobile view toggle (only in xarajat tab) ── */}
-            {isMobile&&activeTab==="xarajat"&&(
+            {isMobile&&activeTab==="px"&&pxSub==="xarajat"&&(
               <div style={{display:"flex",gap:0,borderRadius:10,border:"1px solid #e2e8f0",
                 overflow:"hidden",marginBottom:10,background:"#f8fafc"}}>
                 {[
@@ -4597,23 +4596,7 @@ function App(){
                     Prixod <b style={{color:"#059669",marginLeft:4}}>{prixodData.length.toLocaleString()} yozuv</b>
                   </span>}
                 </div>
-                <label style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#475569",cursor:"pointer",flexShrink:0}}>
-                  <input type="checkbox" checked={autoRefresh}
-                    onChange={e=>{setAutoRefresh(e.target.checked);if(!e.target.checked){clearInterval(timerRef.current);clearInterval(cdownRef.current);}}}
-                    style={{cursor:"pointer",accentColor:"#2563eb"}}/>
-                  Auto
-                </label>
-                {autoRefresh&&<select value={refreshSec} onChange={e=>setRefreshSec(+e.target.value)}
-                  style={{fontSize:11,border:"1px solid #e2e8f0",borderRadius:6,padding:"2px 6px",background:"#f8fafc",color:"#475569",flexShrink:0}}>
-                  <option value={60}>1 daq</option><option value={300}>5 daq</option>
-                  <option value={600}>10 daq</option><option value={1800}>30 daq</option>
-                </select>}
-                {autoRefresh&&countdown>0&&<span style={{fontSize:11,color:"#94a3b8",fontVariantNumeric:"tabular-nums",flexShrink:0}}>{Math.floor(countdown/60)}:{pad2(countdown%60)}</span>}
-                <button onClick={()=>loadFromSheets(sheetsUrl)} disabled={sheetsStatus==="loading"}
-                  style={{padding:"4px 11px",fontSize:11,fontWeight:600,borderRadius:7,border:"1px solid #e2e8f0",
-                    background:"#f8fafc",color:"#475569",cursor:"pointer",flexShrink:0,whiteSpace:"nowrap"}}>
-                  {sheetsStatus==="loading"?"... yuklanmoqda":"Yangilash"}
-                </button>
+                {/* avtomatik yangilash doimiy fon rejimida ishlaydi — tugma yashirilgan */}
                 <button onClick={shareUrl}
                   style={{padding:"4px 12px",fontSize:11,fontWeight:600,borderRadius:7,
                     border:"1px solid #c7d2fe",background:"linear-gradient(135deg,#eff6ff,#e0e7ff)",
@@ -4691,11 +4674,15 @@ function App(){
               </>
             )}
 
-            {activeTab==="diller"&&(
-              <RawGridView title="Diller hisobi (JAMI)" subtitle="Barcha dillerlar" icon="🤝" matrix={dillerData} accent="#0891b2" sheetId={extractSheetId(DEFAULT_DILLER_URL)}/>
-            )}
-            {activeTab==="postavshik"&&(
-              <RawGridView title="Postavshik hisobi (QARZIMIZ)" subtitle="Barcha postavshiklar" icon="🚚" matrix={postData} accent="#c2410c" sheetId={extractSheetId(DEFAULT_POSTAVSHIK_URL)}/>
+            {activeTab==="dilpost"&&(
+              <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-start"}}>
+                <div style={{flex:"1 1 480px",minWidth:0}}>
+                  <RawGridView title="Diller hisobi (JAMI)" subtitle="Barcha dillerlar" icon="🤝" matrix={dillerData} accent="#0891b2" sheetId={extractSheetId(DEFAULT_DILLER_URL)}/>
+                </div>
+                <div style={{flex:"1 1 480px",minWidth:0}}>
+                  <RawGridView title="Postavshik hisobi (QARZIMIZ)" subtitle="Barcha postavshiklar" icon="🚚" matrix={postData} accent="#c2410c" sheetId={extractSheetId(DEFAULT_POSTAVSHIK_URL)}/>
+                </div>
+              </div>
             )}
 
             {activeTab==="spravochnik"&&(
@@ -4707,7 +4694,15 @@ function App(){
             )}
 
             {/* Agent x Filial Prixod */}
-            {activeTab==="prixod"&&(
+            {activeTab==="px"&&(
+              <div style={{display:"flex",gap:8,marginBottom:12}}>
+                {[["prixod","📈 Prixod","#059669"],["xarajat","📉 Xarajat","#dc2626"]].map(([id,lbl,clr])=>(
+                  <button key={id} onClick={()=>setPxSub(id)} style={{flex:1,padding:"10px 12px",borderRadius:10,border:"1px solid "+(pxSub===id?clr:"#e2e8f0"),background:pxSub===id?clr:"#fff",color:pxSub===id?"#fff":"#475569",fontWeight:700,fontSize:13.5,cursor:"pointer",transition:"all .15s"}}>{lbl}</button>
+                ))}
+              </div>
+            )}
+
+            {activeTab==="px"&&pxSub==="prixod"&&(
             <div style={{background:"#fff",borderRadius:13,border:bdr,overflow:"hidden",boxShadow:"var(--shadow-sm)"}}>
               <div style={{padding:"13px 16px",borderBottom:bdr,display:"flex",alignItems:"center",
                 justifyContent:"space-between",gap:8,flexWrap:"wrap",background:"linear-gradient(135deg,#fffbeb,#fef9f0)"}}>
@@ -4840,7 +4835,7 @@ function App(){
             )}
 
                         {/* ── XARAJAT Tab content ── */}
-            {activeTab==="xarajat"&&(
+            {activeTab==="px"&&pxSub==="xarajat"&&(
             <div>
             {/* ── Kartochkalar (mobile card view) ── */}
             {isMobile&&mobileView==="cards"&&(
@@ -5013,10 +5008,8 @@ function App(){
         {[
           {id:"filkesmi",ic:"📍",l:"Filial", act:()=>setActiveTab("filkesmi")},
           {id:"kassa",  ic:"💰",l:"Kassa",     act:()=>setActiveTab("kassa")},
-          {id:"prixod", ic:"📈",l:"Prixod",    act:()=>setActiveTab("prixod")},
-          {id:"xarajat",ic:"📉",l:"Xarajat",  act:()=>setActiveTab("xarajat")},
-          {id:"diller", ic:"🤝",l:"Diller",    act:()=>setActiveTab("diller")},
-          {id:"postavshik",ic:"🚚",l:"Postav.", act:()=>setActiveTab("postavshik")},
+          {id:"px", ic:"📊",l:"Pri/Xar", act:()=>setActiveTab("px")},
+          {id:"dilpost",ic:"🤝",l:"Dil/Post", act:()=>setActiveTab("dilpost")},
           {id:"spravochnik",ic:"📇",l:"Baza", act:()=>setActiveTab("spravochnik")},
           {id:"export", ic:"📥",l:"Excel",
             act:()=>filteredData.length&&exportDashboardXlsx({groupsArr,fils,cx,cT,fT,grand,filteredData,dateFrom,dateTo,filename:isDateFiltered?"Filtrlangan":"Xisobot"})},
