@@ -511,7 +511,10 @@ function FilialKesmi({ prixod, xarajat }){
     const ostFT={}; filials.forEach(f=>{ostFT[f]={}; paytypes.forEach(p=>ostFT[f][p]={kSom:0,kUsd:0,cSom:0,cUsd:0});});
     k.forEach(r=>{const f=fl2(r),p=String(r.typ||"—").trim()||"—"; if(ostFT[f]&&ostFT[f][p]){ostFT[f][p].kSom+=r.sum||0;ostFT[f][p].kUsd+=r.usd||0;}});
     x.forEach(r=>{const f=fl2(r),p=String(r.typ||"—").trim()||"—"; if(ostFT[f]&&ostFT[f][p]){ostFT[f][p].cSom+=r.sum||0;ostFT[f][p].cUsd+=r.usd||0;}});
-    return { k, x, kirim, chiqim, ostatka:kirim-chiqim, kirimSom, chiqimSom, ostatkaSom:kirimSom-chiqimSom, agents:grp(k,"manager"), cats:grp(x,"cat"), typs, kMon:monAgg(k), xMon:monAgg(x), filials, paytypes, ostFT };
+    const filAgg={}; filials.forEach(f=>filAgg[f]={kUsd:0,kSom:0,cUsd:0,cSom:0});
+    k.forEach(r=>{const f=fl2(r); if(filAgg[f]){filAgg[f].kUsd+=r.usd||0;filAgg[f].kSom+=r.sum||0;}});
+    x.forEach(r=>{const f=fl2(r); if(filAgg[f]){filAgg[f].cUsd+=r.usd||0;filAgg[f].cSom+=r.sum||0;}});
+    return { k, x, kirim, chiqim, ostatka:kirim-chiqim, kirimSom, chiqimSom, ostatkaSom:kirimSom-chiqimSom, agents:grp(k,"manager"), cats:grp(x,"cat"), typs, kMon:monAgg(k), xMon:monAgg(x), filials, paytypes, ostFT, filAgg };
   }, [cur, prixod, xarajat, period, from, to]);
 
   const exportXl = () => {
@@ -676,41 +679,34 @@ function FilialKesmi({ prixod, xarajat }){
 
           {cur==="*" && v.filials.length>0 && (
             <div className="fcard" style={{background:"#fff",borderRadius:13,border:bdr,overflow:"hidden",boxShadow:"var(--shadow-sm)",marginBottom:12}}>
-              <div style={{padding:"11px 15px",borderBottom:bdr,background:"linear-gradient(135deg,#fffbeb,#fef3c7)"}}>
-                <span style={{fontWeight:800,fontSize:13.5,color:"#0f172a"}}>🪙 Filiallar × to'lov turi — Ostatka (Kirim − Chiqim)</span>
-                <span style={{fontSize:11,color:"#94a3b8",marginLeft:8}}>SUM va USD</span>
+              <div style={{padding:"11px 15px",borderBottom:bdr,background:"linear-gradient(135deg,#eff6ff,#dbeafe)"}}>
+                <span style={{fontWeight:800,fontSize:13.5,color:"#0f172a"}}>🏢 Filiallar kesmida — Kirim / Chiqim / Ostatka</span>
+                <span style={{fontSize:11,color:"#94a3b8",marginLeft:8}}>har filial · SUM va USD · pastda umumiy JAMI</span>
               </div>
               <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
-                  <thead>
-                    <tr style={{background:"#f8fafc"}}>
-                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,color:"#64748b",textTransform:"uppercase",borderBottom:"1px solid #e2e8f0",position:"sticky",left:0,background:"#f8fafc",zIndex:2}}>Filial</th>
-                      {v.paytypes.map(p=><th key={p} colSpan={2} style={{padding:"7px 10px",textAlign:"center",fontSize:11.5,fontWeight:800,color:"#334155",borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap"}}>{p}</th>)}
-                      <th colSpan={2} style={{padding:"7px 10px",textAlign:"center",fontSize:11.5,fontWeight:800,color:"#7c3aed"}}>JAMI</th>
-                    </tr>
-                    <tr style={{background:"#f8fafc"}}>
-                      <th style={{position:"sticky",left:0,background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}></th>
-                      {v.paytypes.map(p=>[<th key={p+"s"} style={{padding:"4px 10px",textAlign:"right",fontSize:10,color:"#94a3b8",borderBottom:"2px solid #e2e8f0"}}>SUM</th>,<th key={p+"u"} style={{padding:"4px 10px",textAlign:"right",fontSize:10,color:"#94a3b8",borderBottom:"2px solid #e2e8f0"}}>USD</th>])}
-                      <th style={{padding:"4px 10px",textAlign:"right",fontSize:10,color:"#94a3b8",borderBottom:"2px solid #e2e8f0"}}>SUM</th><th style={{padding:"4px 10px",textAlign:"right",fontSize:10,color:"#94a3b8",borderBottom:"2px solid #e2e8f0"}}>USD</th>
-                    </tr>
-                  </thead>
+                  <thead><tr style={{background:"#f8fafc"}}>{["Filial","Kirim $","Chiqim $","Ostatka $","Kirim so'm","Chiqim so'm","Ostatka so'm"].map((h,i)=>(<th key={i} style={{padding:"8px 11px",textAlign:i?"right":"left",fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:".3px",borderBottom:"2px solid #e2e8f0",whiteSpace:"nowrap"}}>{h}</th>))}</tr></thead>
                   <tbody>
-                    {v.filials.map(f=>{ let js=0,ju=0; v.paytypes.forEach(p=>{const o=v.ostFT[f][p]; js+=o.kSom-o.cSom; ju+=o.kUsd-o.cUsd;});
+                    {v.filials.map(f=>{const a=v.filAgg[f]; const oU=a.kUsd-a.cUsd, oS=a.kSom-a.cSom;
                       return <tr key={f} style={{borderBottom:"1px solid #f1f5f9"}}>
-                        <td style={{padding:"7px 10px",fontWeight:700,color:"#0e7490",position:"sticky",left:0,background:"#fff"}}>{f}</td>
-                        {v.paytypes.map(p=>{const o=v.ostFT[f][p]; const s=o.kSom-o.cSom,u=o.kUsd-o.cUsd; return [<td key={p+"s"} style={{padding:"7px 10px",textAlign:"right",color:s?"#0f172a":"#cbd5e1"}}>{s?som(s):"—"}</td>,<td key={p+"u"} style={{padding:"7px 10px",textAlign:"right",color:u<0?"#dc2626":(u?"#0f172a":"#cbd5e1")}}>{u?som(u):"—"}</td>];})}
-                        <td style={{padding:"7px 10px",textAlign:"right",fontWeight:800,color:"#7c3aed",background:"#faf5ff"}}>{som(js)}</td>
-                        <td style={{padding:"7px 10px",textAlign:"right",fontWeight:800,color:"#7c3aed",background:"#faf5ff"}}>{ju?som(ju):"—"}</td>
+                        <td style={{padding:"8px 11px",fontWeight:700,color:"#1e40af"}}>{f}</td>
+                        <td style={{padding:"8px 11px",textAlign:"right",color:"#059669",fontWeight:600}}>{f2(a.kUsd)}</td>
+                        <td style={{padding:"8px 11px",textAlign:"right",color:"#dc2626",fontWeight:600}}>{f2(a.cUsd)}</td>
+                        <td style={{padding:"8px 11px",textAlign:"right",color:oU>=0?"#0369a1":"#b45309",fontWeight:800}}>{f2(oU)}</td>
+                        <td style={{padding:"8px 11px",textAlign:"right",color:"#94a3b8"}}>{som(a.kSom)}</td>
+                        <td style={{padding:"8px 11px",textAlign:"right",color:"#94a3b8"}}>{som(a.cSom)}</td>
+                        <td style={{padding:"8px 11px",textAlign:"right",color:"#64748b",fontWeight:600}}>{som(oS)}</td>
                       </tr>;})}
                   </tbody>
-                  <tfoot>
-                    <tr style={{background:"#f8fafc",fontWeight:800,borderTop:"2px solid #e2e8f0"}}>
-                      <td style={{padding:"8px 10px",position:"sticky",left:0,background:"#f8fafc"}}>JAMI</td>
-                      {v.paytypes.map(p=>{let s=0,u=0; v.filials.forEach(f=>{const o=v.ostFT[f][p]; s+=o.kSom-o.cSom; u+=o.kUsd-o.cUsd;}); return [<td key={p+"s"} style={{padding:"8px 10px",textAlign:"right"}}>{som(s)}</td>,<td key={p+"u"} style={{padding:"8px 10px",textAlign:"right"}}>{u?som(u):"—"}</td>];})}
-                      <td style={{padding:"8px 10px",textAlign:"right",color:"#7c3aed"}}>{som(v.ostatkaSom)}</td>
-                      <td style={{padding:"8px 10px",textAlign:"right",color:"#7c3aed"}}>{v.ostatka?som(v.ostatka):"—"}</td>
-                    </tr>
-                  </tfoot>
+                  <tfoot><tr style={{background:"#eef2ff",fontWeight:800,borderTop:"2px solid #c7d2fe"}}>
+                    <td style={{padding:"9px 11px",color:"#3730a3"}}>UMUMIY JAMI</td>
+                    <td style={{padding:"9px 11px",textAlign:"right",color:"#059669"}}>{f2(v.kirim)}</td>
+                    <td style={{padding:"9px 11px",textAlign:"right",color:"#dc2626"}}>{f2(v.chiqim)}</td>
+                    <td style={{padding:"9px 11px",textAlign:"right",color:v.ostatka>=0?"#0369a1":"#b45309"}}>{f2(v.ostatka)}</td>
+                    <td style={{padding:"9px 11px",textAlign:"right",color:"#64748b"}}>{som(v.kirimSom)}</td>
+                    <td style={{padding:"9px 11px",textAlign:"right",color:"#64748b"}}>{som(v.chiqimSom)}</td>
+                    <td style={{padding:"9px 11px",textAlign:"right",color:"#64748b"}}>{som(v.ostatkaSom)}</td>
+                  </tr></tfoot>
                 </table>
               </div>
             </div>
@@ -4125,8 +4121,7 @@ function App(){
       }
       setPrixodData(rows); setPrixodId(id); setPrixodStatus("ok");
       setPrixodSi({ found: found.map(n=>LB[n]||n) });
-      // Filial kesmi — birinchi/asosiy oyna
-      setActiveTab("filkesmi");
+      /* yangilanganda joriy oyna o'zgarmaydi — birinchi ko'rinish useState("filkesmi") orqali */
     }catch(e){ setPrixodErr("Xato: "+e.message); setPrixodStatus("err"); }
     setBusy(false);
   }, [prixodUrl, data.length]);
@@ -4367,6 +4362,20 @@ function App(){
             onMouseEnter={e=>{e.currentTarget.style.background="#f8fafc";e.currentTarget.style.borderColor="#cbd5e1";}}
             onMouseLeave={e=>{e.currentTarget.style.background="#fff";e.currentTarget.style.borderColor="#e2e8f0";}}>
             📂 {isMobile?"Fayl":"Boshqa fayl"}
+          </button>
+          <button title="Ma'lumot formati namunasini yuklab olish" onClick={()=>{try{
+            const wb=XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+              ["Sana","Filial","Klient","Menejer","Тип оплата","Валюта","Курс","Сумма","Сумма $"],
+              ["01.01.2026","Sotuv","Mijoz nomi","Agent nomi","Наличие","сум",12650,12650000,1000]
+            ]), "Prixod (kirim)");
+            XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([
+              ["Sana","Filial","ФИО","Категория","Тип оплата","Описание","Валюта","Курс","Сумма","Сумма $"],
+              ["01.01.2026","Sotuv","Xodim nomi","Ijara","Наличие","izoh","сум",12650,6325000,500]
+            ]), "Xarajat (chiqim)");
+            XLSX.writeFile(wb,"Namuna_shablon.xlsx");
+          }catch(e){}}} style={{padding:isMobile?"6px 10px":"8px 15px",fontSize:12,fontWeight:600,border:"1px solid #bbf7d0",borderRadius:9,background:"#f0fdf4",color:"#15803d",cursor:"pointer",whiteSpace:"nowrap"}}>
+            📋 {isMobile?"Namuna":"Namuna (shablon)"}
           </button>
           {data.length>0&&(
             <button className="btn-primary" onClick={()=>setCatM({cat:"*",filial:"*",flabel:"Barcha filiallar"})}
