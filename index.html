@@ -278,107 +278,117 @@ function avgRate(rows){
 }
 
 /* ─── Spravochnik: Klientlar bazasi (klient → biriktirilgan agent + filiallar) ── */
-function SpravochnikView({ rows }){
-  const [q, setQ] = useState("");
-  const [open, setOpen] = useState(null);
-  const [fil, setFil] = useState("*");
+function SpravochnikView({ prixod, xarajat }){
+  const [sub, setSub] = useState("klient");
   const [period, setPeriod] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [q, setQ] = useState("");
+  const [open, setOpen] = useState(null);
   const bdr = "1px solid #e2e8f0";
   const som = n => Math.round(n||0).toLocaleString("ru-RU");
 
-  const clients = useMemo(()=>{
-    const inP = (r)=>{
-      const day = r.day || "";
-      if(from && day && day < from) return false;
-      if(to && day && day > to) return false;
-      if(from || to) return true;
-      if(period==="all") return true;
-      const d = day ? new Date(day) : null;
-      if(!d || isNaN(d)) return true;
-      const now=new Date(), t=new Date(now.getFullYear(),now.getMonth(),now.getDate());
-      if(period==="today") return d>=t;
-      if(period==="7")  return d>=new Date(t.getTime()-6*864e5);
-      if(period==="30") return d>=new Date(t.getTime()-29*864e5);
-      if(period==="month") return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();
-      if(period==="year")  return d.getFullYear()===now.getFullYear();
-      return true;
-    };
-    const m = {};
-    for(const r of rows){
-      if(!inP(r)) continue;
-      const c = String(r.client||"").trim(); if(!c) continue;
-      if(!m[c]) m[c] = { name:c, agents:new Set(), filials:new Set(), usd:0, sum:0, cnt:0, rows:[] };
-      const o = m[c];
-      const mgr = String(r.manager||"").trim(); if(mgr) o.agents.add(mgr);
-      const fl  = String(r.flabel||r.filial||"").trim(); if(fl) o.filials.add(fl);
-      o.usd += r.usd||0; o.sum += r.sum||0; o.cnt++; o.rows.push(r);
-    }
-    return Object.values(m).map(o=>({ ...o, agents:[...o.agents], filials:[...o.filials] }))
-      .sort((a,b)=> b.usd - a.usd);
-  }, [rows, period, from, to]);
-
-  const allFilials = useMemo(()=>{
-    const s = new Set();
-    for(const r of rows){ const f=String(r.flabel||r.filial||"").trim(); if(f) s.add(f); }
-    return [...s].sort();
-  }, [rows]);
-
-  const filtered = useMemo(()=>{
-    const s = q.trim().toLowerCase();
-    return clients.filter(c =>
-      (fil==="*" || c.filials.includes(fil)) &&
-      (!s || c.name.toLowerCase().includes(s)
-          || c.agents.some(a=>a.toLowerCase().includes(s))
-          || c.filials.some(f=>f.toLowerCase().includes(s))));
-  }, [clients, q, fil]);
-
-  const totUsd = filtered.reduce((s,c)=>s+c.usd,0);
-  const chip = (t,bg,cl) => <span key={t} style={{display:"inline-block",background:bg,color:cl,borderRadius:20,padding:"2px 9px",fontSize:11,fontWeight:600,margin:"1px 3px 1px 0",whiteSpace:"nowrap"}}>{t}</span>;
-  const chipBtn = (active) => ({border:"1px solid "+(active?"#4338ca":"#e2e8f0"),background:active?"#4338ca":"#fff",color:active?"#fff":"#475569",borderRadius:20,padding:"4px 12px",fontSize:12,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"});
-  const exportXlsx = () => {
-    try{
-      const wb = XLSX.utils.book_new();
-      const aoa = [["Klient","Agentlar","Filiallar","Yozuv","Summa $"]];
-      filtered.forEach(c=>aoa.push([c.name, c.agents.join(", "), c.filials.join(", "), c.cnt, Math.round(c.usd)]));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), "Klientlar");
-      const det = [["Klient","Sana","Filial","Agent","Tip","Kategoriya","Izoh","Valyuta","Kurs","Summa","Summa $"]];
-      filtered.forEach(c=>c.rows.forEach(r=>det.push([c.name, r.dayLabel||r.month||"", r.flabel||r.filial||"", r.manager||"", r.typ||"", r.cat||"", r.desc||"", r.cur||"", Math.round(r.rate||0), r.sum||0, r.usd||0])));
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(det), "Baza-yozuvlar");
-      XLSX.writeFile(wb, "Klientlar_bazasi.xlsx");
-    }catch(e){}
+  const inP = (r)=>{
+    const day=r.day||"";
+    if(from && day && day<from) return false;
+    if(to && day && day>to) return false;
+    if(from||to) return true;
+    if(period==="all") return true;
+    const d=day?new Date(day):null; if(!d||isNaN(d)) return true;
+    const now=new Date(), t=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    if(period==="today") return d>=t;
+    if(period==="kecha"){ const y=new Date(t.getTime()-864e5); return d>=y&&d<t; }
+    if(period==="7") return d>=new Date(t.getTime()-6*864e5);
+    if(period==="30") return d>=new Date(t.getTime()-29*864e5);
+    if(period==="month") return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();
+    if(period==="year") return d.getFullYear()===now.getFullYear();
+    return true;
   };
 
-  if(!rows.length) return (
-    <div style={{background:"#fff",borderRadius:13,border:bdr,padding:40,textAlign:"center",color:"#94a3b8"}}>
-      <div style={{fontSize:40,marginBottom:10,opacity:.4}}>📇</div>
-      Klientlar bazasi bo'sh. <b>Prixod</b> jadvali ulanishi kerak.
-    </div>
+  const data = useMemo(()=>{
+    const kF = prixod.filter(inP), xF = xarajat.filter(inP);
+    const fl = r=>String(r.flabel||r.filial||"").trim();
+    const km={}; kF.forEach(r=>{ const c=String(r.client||"").trim(); if(!c) return;
+      if(!km[c]) km[c]={n:c,usd:0,som:0,cnt:0,rows:[],A:new Set(),F:new Set()};
+      const o=km[c]; o.usd+=r.usd||0; o.som+=r.sum||0; o.cnt++; o.rows.push(r);
+      const a=String(r.manager||"").trim(); if(a)o.A.add(a); const f=fl(r); if(f)o.F.add(f); });
+    const klients=Object.values(km).map(o=>({...o,A:[...o.A],F:[...o.F]})).sort((a,b)=>b.usd-a.usd);
+    const am={}; kF.forEach(r=>{ const a=String(r.manager||"").trim(); if(!a) return;
+      if(!am[a]) am[a]={n:a,usd:0,som:0,cnt:0,rows:[],C:new Set(),F:new Set()};
+      const o=am[a]; o.usd+=r.usd||0; o.som+=r.sum||0; o.cnt++; o.rows.push(r);
+      const c=String(r.client||"").trim(); if(c)o.C.add(c); const f=fl(r); if(f)o.F.add(f); });
+    const agents=Object.values(am).map(o=>({...o,C:[...o.C],F:[...o.F]})).sort((a,b)=>b.usd-a.usd);
+    const cm={}; xF.forEach(r=>{ const c=String(r.cat||"").trim(); if(!c) return;
+      if(!cm[c]) cm[c]={n:c,usd:0,som:0,cnt:0,rows:[],F:new Set()};
+      const o=cm[c]; o.usd+=r.usd||0; o.som+=r.sum||0; o.cnt++; o.rows.push(r); const f=fl(r); if(f)o.F.add(f); });
+    const kats=Object.values(cm).map(o=>({...o,F:[...o.F]})).sort((a,b)=>b.usd-a.usd);
+    return { klients, agents, kats };
+  }, [prixod, xarajat, period, from, to]);
+
+  const cfg = sub==="klient" ? {list:data.klients, label:"Klient", accent:"#4338ca"}
+            : sub==="agent"  ? {list:data.agents,  label:"Agent",  accent:"#059669"}
+            :                  {list:data.kats,    label:"Kategoriya", accent:"#dc2626"};
+
+  const shown = useMemo(()=>{
+    const s=q.trim().toLowerCase(); if(!s) return cfg.list;
+    return cfg.list.filter(o=> o.n.toLowerCase().includes(s)
+      || (o.A&&o.A.some(a=>a.toLowerCase().includes(s)))
+      || (o.C&&o.C.some(c=>c.toLowerCase().includes(s)))
+      || (o.F&&o.F.some(f=>f.toLowerCase().includes(s))));
+  }, [cfg.list, q]);
+
+  const totUsd = shown.reduce((s,o)=>s+o.usd,0);
+
+  const exportXl = () => { try{
+    const wb=XLSX.utils.book_new(), R=Math.round;
+    const head = sub==="klient" ? ["Klient","Agentlar","Filiallar","Yozuv","Summa $","Summa so'm"]
+               : sub==="agent"  ? ["Agent","Klientlar soni","Filiallar","Yozuv","Summa $","Summa so'm"]
+               :                  ["Kategoriya","Filiallar","Yozuv","Summa $","Summa so'm"];
+    const aoa=[head];
+    shown.forEach(o=>{ if(sub==="klient")aoa.push([o.n,(o.A||[]).join(", "),(o.F||[]).join(", "),o.cnt,R(o.usd),R(o.som)]);
+      else if(sub==="agent")aoa.push([o.n,(o.C||[]).length,(o.F||[]).join(", "),o.cnt,R(o.usd),R(o.som)]);
+      else aoa.push([o.n,(o.F||[]).join(", "),o.cnt,R(o.usd),R(o.som)]); });
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(aoa),cfg.label);
+    const det=[[cfg.label,"Sana","Filial","Klient/FIO","Agent","Tip","Kategoriya","Izoh","Kurs","Summa","Summa $"]];
+    shown.forEach(o=>o.rows.forEach(r=>det.push([o.n,r.dayLabel||r.month||"",r.flabel||r.filial||"",r.client||r.fio||"",r.manager||"",r.typ||"",r.cat||"",r.desc||"",R(r.rate||0),r.sum||0,r.usd||0])));
+    XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(det),"Yozuvlar");
+    XLSX.writeFile(wb,"Baza_"+cfg.label+".xlsx");
+  }catch(e){} };
+
+  const chip = (t,bg,cl)=><span key={t} style={{display:"inline-block",background:bg,color:cl,borderRadius:20,padding:"2px 9px",fontSize:11,fontWeight:600,margin:"1px 3px 1px 0",whiteSpace:"nowrap"}}>{t}</span>;
+  const subBtn = (id,label,clr)=>(
+    <button onClick={()=>{setSub(id);setOpen(null);setQ("");}} style={{flex:1,padding:"9px 10px",borderRadius:9,border:"1px solid "+(sub===id?clr:"#e2e8f0"),background:sub===id?clr:"#fff",color:sub===id?"#fff":"#475569",fontWeight:700,fontSize:12.5,cursor:"pointer",whiteSpace:"nowrap"}}>{label}</button>
   );
+  const midHead = sub==="klient" ? ["🤝 Agentlar","🏢 Filiallar"] : sub==="agent" ? ["👥 Klientlar","🏢 Filiallar"] : ["🏢 Filiallar"];
+  const midCells = (o)=> sub==="klient"
+      ? [<td key="a" style={{padding:"7px 11px"}}>{o.A.length?o.A.map(a=>chip(a,"#fef3c7","#92400e")):<span style={{color:"#cbd5e1"}}>—</span>}</td>,
+         <td key="f" style={{padding:"7px 11px"}}>{o.F.length?o.F.map(f=>chip(f,"#dbeafe","#1e40af")):<span style={{color:"#cbd5e1"}}>—</span>}</td>]
+    : sub==="agent"
+      ? [<td key="c" style={{padding:"7px 11px",color:"#475569"}}>{o.C.length} ta</td>,
+         <td key="f" style={{padding:"7px 11px"}}>{o.F.length?o.F.map(f=>chip(f,"#dbeafe","#1e40af")):<span style={{color:"#cbd5e1"}}>—</span>}</td>]
+      : [<td key="f" style={{padding:"7px 11px"}}>{o.F.length?o.F.map(f=>chip(f,"#dbeafe","#1e40af")):<span style={{color:"#cbd5e1"}}>—</span>}</td>];
+  const colCount = midHead.length + 3;
 
   return (
-    <div style={{background:"#fff",borderRadius:13,border:bdr,overflow:"hidden",boxShadow:"var(--shadow-sm)"}}>
+    <div className="fcard" style={{background:"#fff",borderRadius:13,border:bdr,overflow:"hidden",boxShadow:"var(--shadow-sm)"}}>
       <div style={{padding:"13px 16px",borderBottom:bdr,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap",background:"linear-gradient(135deg,#eef2ff,#f5f3ff)"}}>
         <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
-          <span style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>📇 Klientlar bazasi (Spravochnik)</span>
-          <span style={{fontSize:11.5,color:"#94a3b8"}}>{filtered.length} / {clients.length} klient · qatorga bosing → detal</span>
+          <span style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>📚 Baza</span>
+          <span style={{fontSize:11.5,color:"#94a3b8"}}>{shown.length} ta · qatorga bosing → detal</span>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <span style={{fontSize:13,fontWeight:800,color:"#4338ca"}}>{f2(totUsd)}</span>
-          <button onClick={exportXlsx} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid #bbf7d0",background:"#f0fdf4",color:"#15803d",cursor:"pointer",whiteSpace:"nowrap"}}>📥 Excel</button>
+          <span style={{fontSize:13,fontWeight:800,color:cfg.accent}}>{f2(totUsd)}</span>
+          <button onClick={exportXl} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"7px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid #bbf7d0",background:"#f0fdf4",color:"#15803d",cursor:"pointer",whiteSpace:"nowrap"}}>📥 Excel</button>
         </div>
       </div>
-      {allFilials.length>0&&(
-        <div style={{padding:"9px 14px",borderBottom:bdr,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
-          <span style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginRight:2}}>🏢 Filial:</span>
-          <button onClick={()=>setFil("*")} style={chipBtn(fil==="*")}>Barchasi</button>
-          {allFilials.map(f=><button key={f} onClick={()=>setFil(f)} style={chipBtn(fil===f)}>{f}</button>)}
-        </div>
-      )}
+      <div style={{padding:"10px 14px",borderBottom:bdr,display:"flex",gap:8}}>
+        {subBtn("klient","👥 Klientlar","#4338ca")}
+        {subBtn("agent","🤝 Agentlar (kirim)","#059669")}
+        {subBtn("kategoriya","🗂️ Kategoriyalar (chiqim)","#dc2626")}
+      </div>
       <div style={{padding:"9px 14px",borderBottom:bdr,display:"flex",gap:6,flexWrap:"wrap",alignItems:"center"}}>
         <span style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginRight:2}}>📅 Davr:</span>
-        {[["all","Barchasi"],["today","Bugun"],["7","7 kun"],["30","30 kun"],["month","Bu oy"],["year","Bu yil"]].map(([pv,pl])=>{
+        {[["all","Barchasi"],["today","Bugun"],["kecha","Kecha"],["7","7 kun"],["30","30 kun"],["month","Bu oy"],["year","Bu yil"]].map(([pv,pl])=>{
           const act=period===pv&&!from&&!to;
           return <button key={pv} onClick={()=>{setPeriod(pv);setFrom("");setTo("");}} style={{border:"1px solid "+(act?"#4338ca":"#e2e8f0"),background:act?"#eef2ff":"#fff",color:act?"#4338ca":"#64748b",borderRadius:20,padding:"4px 13px",fontSize:11.5,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>{pl}</button>;
         })}
@@ -389,68 +399,64 @@ function SpravochnikView({ rows }){
         {(from||to)&&<button onClick={()=>{setFrom("");setTo("");}} style={{border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",borderRadius:8,padding:"4px 9px",fontSize:11,fontWeight:700,cursor:"pointer"}}>✕</button>}
       </div>
       <div style={{padding:"10px 16px",borderBottom:bdr}}>
-        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="🔍 Klient, agent yoki filial bo'yicha qidirish…"
-          style={{width:"100%",padding:"9px 12px",border:bdr,borderRadius:9,fontSize:13,outline:"none"}}/>
+        <input value={q} onChange={e=>setQ(e.target.value)} placeholder="🔍 Qidirish…" style={{width:"100%",padding:"9px 12px",border:bdr,borderRadius:9,fontSize:13,outline:"none"}}/>
       </div>
       <div style={{overflowX:"auto"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead>
             <tr style={{background:"#f8fafc"}}>
-              {["Klient","🤝 Agentlar","🏢 Filiallar","Yozuv","Summa $"].map((h,i)=>(
-                <th key={i} style={{padding:"9px 11px",textAlign:i>2?"right":"left",fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:".4px",whiteSpace:"nowrap",borderBottom:"2px solid #e2e8f0"}}>{h}</th>
+              {[cfg.label,...midHead,"Yozuv","Summa $"].map((h,i)=>(
+                <th key={i} style={{padding:"9px 11px",textAlign:i>=1+midHead.length?"right":"left",fontSize:11,color:"#64748b",textTransform:"uppercase",letterSpacing:".4px",whiteSpace:"nowrap",borderBottom:"2px solid #e2e8f0"}}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
-            {filtered.slice(0,500).map(c=>(
-              <React.Fragment key={c.name}>
-                <tr onClick={()=>setOpen(open===c.name?null:c.name)} style={{cursor:"pointer",borderBottom:bdr,background:open===c.name?"#eef2ff":"#fff"}}>
-                  <td style={{padding:"9px 11px",fontWeight:700,color:"#1e293b"}}>{open===c.name?"▾ ":"▸ "}{c.name}</td>
-                  <td style={{padding:"7px 11px"}}>{c.agents.length?c.agents.map(a=>chip(a,"#fef3c7","#92400e")):<span style={{color:"#cbd5e1"}}>—</span>}</td>
-                  <td style={{padding:"7px 11px"}}>{c.filials.length?c.filials.map(f=>chip(f,"#dbeafe","#1e40af")):<span style={{color:"#cbd5e1"}}>—</span>}</td>
-                  <td style={{padding:"9px 11px",textAlign:"right",color:"#64748b"}}>{c.cnt}</td>
-                  <td style={{padding:"9px 11px",textAlign:"right",fontWeight:700,color:"#059669"}}>{f2(c.usd)}</td>
+            {shown.slice(0,500).map(o=>(
+              <React.Fragment key={o.n}>
+                <tr onClick={()=>setOpen(open===o.n?null:o.n)} style={{cursor:"pointer",borderBottom:bdr,background:open===o.n?"#eef2ff":"#fff"}}>
+                  <td style={{padding:"9px 11px",fontWeight:700,color:"#1e293b"}}>{open===o.n?"▾ ":"▸ "}{o.n}</td>
+                  {midCells(o)}
+                  <td style={{padding:"9px 11px",textAlign:"right",color:"#64748b"}}>{o.cnt}</td>
+                  <td style={{padding:"9px 11px",textAlign:"right",fontWeight:700,color:cfg.accent}}>{f2(o.usd)}</td>
                 </tr>
-                {open===c.name&&(
-                  <tr><td colSpan={5} style={{padding:0,background:"#fafbff"}}>
+                {open===o.n&&(
+                  <tr><td colSpan={colCount} style={{padding:0,background:"#fafbff"}}>
                     <div style={{overflowX:"auto",padding:"6px 11px 12px"}}>
                       <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                         <thead><tr style={{color:"#94a3b8"}}>
-                          {["Sana","Filial","Agent","Tip","Kategoriya","Izoh","Kurs","Summa","$"].map((h,i)=>(
-                            <th key={i} style={{padding:"5px 8px",textAlign:i>5?"right":"left",fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
+                          {["Sana","Filial","Klient/FIO","Agent","Tip","Kategoriya","Izoh","Kurs","Summa","$"].map((h,i)=>(
+                            <th key={i} style={{padding:"5px 8px",textAlign:i>6?"right":"left",fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
                           ))}
                         </tr></thead>
                         <tbody>
-                          {c.rows.slice(0,200).map((r,i)=>(
+                          {o.rows.slice(0,200).map((r,i)=>(
                             <tr key={i} style={{borderTop:"1px solid #eef2f7"}}>
-                              <td style={{padding:"4px 8px",whiteSpace:"nowrap"}}>{r.dayLabel||r.month||"—"}</td>
+                              <td style={{padding:"4px 8px",whiteSpace:"nowrap",color:"#94a3b8"}}>{r.dayLabel||r.month||"—"}</td>
                               <td style={{padding:"4px 8px"}}>{r.flabel||r.filial||"—"}</td>
+                              <td style={{padding:"4px 8px"}}>{r.client||r.fio||"—"}</td>
                               <td style={{padding:"4px 8px"}}>{r.manager||"—"}</td>
                               <td style={{padding:"4px 8px",color:"#64748b"}}>{r.typ||"—"}</td>
                               <td style={{padding:"4px 8px",color:"#64748b"}}>{r.cat||"—"}</td>
-                              <td style={{padding:"4px 8px",color:"#94a3b8",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.desc||""}>{r.desc||"—"}</td>
+                              <td style={{padding:"4px 8px",color:"#94a3b8",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.desc||""}>{r.desc||"—"}</td>
                               <td style={{padding:"4px 8px",textAlign:"right",color:"#7c3aed"}}>{som(r.rate)}</td>
                               <td style={{padding:"4px 8px",textAlign:"right"}}>{som(r.sum)}</td>
-                              <td style={{padding:"4px 8px",textAlign:"right",fontWeight:600,color:"#059669"}}>{f2(r.usd)}</td>
-                            </tr>
-                          ))}
+                              <td style={{padding:"4px 8px",textAlign:"right",fontWeight:600,color:cfg.accent}}>{f2(r.usd)}</td>
+                            </tr>))}
                         </tbody>
                       </table>
-                      {c.rows.length>200&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>Ko'rsatilmoqda: 200 / {c.rows.length}</div>}
+                      {o.rows.length>200&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>Ko'rsatilmoqda: 200 / {o.rows.length}</div>}
                     </div>
                   </td></tr>
                 )}
-              </React.Fragment>
-            ))}
+              </React.Fragment>))}
+            {shown.length===0&&<tr><td colSpan={colCount} style={{padding:30,textAlign:"center",color:"#cbd5e1"}}>Ma'lumot yo'q</td></tr>}
           </tbody>
         </table>
       </div>
-      {filtered.length>500&&<div style={{padding:"8px 16px",fontSize:11,color:"#94a3b8"}}>Ko'rsatilmoqda: 500 / {filtered.length}. Qidiruvdan foydalaning.</div>}
+      {shown.length>500&&<div style={{padding:"8px 16px",fontSize:11,color:"#94a3b8"}}>Ko'rsatilmoqda: 500 / {shown.length}. Qidiruvdan foydalaning.</div>}
     </div>
   );
 }
-
-/* ─── Filial kesmi: bitta filial bo'yicha dashboard (Kirim/Chiqim/Ostatka) ── */
 function FilialKesmi({ prixod, xarajat }){
   const [fil, setFil] = useState("*");
   const [period, setPeriod] = useState("all");
@@ -479,6 +485,7 @@ function FilialKesmi({ prixod, xarajat }){
       if(!d || isNaN(d)) return true;
       const now=new Date(), t=new Date(now.getFullYear(),now.getMonth(),now.getDate());
       if(period==="today") return d>=t;
+      if(period==="kecha"){ const y=new Date(t.getTime()-864e5); return d>=y && d<t; }
       if(period==="7")  return d>=new Date(t.getTime()-6*864e5);
       if(period==="30") return d>=new Date(t.getTime()-29*864e5);
       if(period==="month") return d.getFullYear()===now.getFullYear()&&d.getMonth()===now.getMonth();
@@ -495,7 +502,16 @@ function FilialKesmi({ prixod, xarajat }){
     bt(k,"k"); bt(x,"c");
     const typs = Object.values(typM).map(t=>({...t,oSom:t.kSom-t.cSom,oUsd:t.kUsd-t.cUsd})).sort((a,b)=>(b.kUsd+b.cUsd)-(a.kUsd+a.cUsd));
     const monAgg = (rows)=>{ const m={}; rows.forEach(r=>{ const mo=String(r.month||"—"); const ms=(r.ms!=null?r.ms:9e15); if(!m[mo])m[mo]={oy:mo,som:0,usd:0,cnt:0,ms}; m[mo].som+=r.sum||0; m[mo].usd+=r.usd||0; m[mo].cnt++; if(ms<m[mo].ms)m[mo].ms=ms; }); return Object.values(m).sort((a,b)=>a.ms-b.ms); };
-    return { k, x, kirim, chiqim, ostatka:kirim-chiqim, kirimSom, chiqimSom, ostatkaSom:kirimSom-chiqimSom, agents:grp(k,"manager"), cats:grp(x,"cat"), typs, kMon:monAgg(k), xMon:monAgg(x) };
+    // Filial × to'lov turi (barchasi ko'rinishi uchun)
+    const fl2 = r => String(r.flabel||r.filial||"—").trim()||"—";
+    const fset=new Set(); [...k,...x].forEach(r=>fset.add(fl2(r)));
+    const filials=[...fset].sort((a,b)=>{const ia=FIL_ORDER.indexOf(a),ib=FIL_ORDER.indexOf(b); if(ia!==-1||ib!==-1)return (ia===-1?99:ia)-(ib===-1?99:ib); return a.localeCompare(b);});
+    const pset=new Set(); [...k,...x].forEach(r=>pset.add(String(r.typ||"—").trim()||"—"));
+    const paytypes=[...pset];
+    const ostFT={}; filials.forEach(f=>{ostFT[f]={}; paytypes.forEach(p=>ostFT[f][p]={kSom:0,kUsd:0,cSom:0,cUsd:0});});
+    k.forEach(r=>{const f=fl2(r),p=String(r.typ||"—").trim()||"—"; if(ostFT[f]&&ostFT[f][p]){ostFT[f][p].kSom+=r.sum||0;ostFT[f][p].kUsd+=r.usd||0;}});
+    x.forEach(r=>{const f=fl2(r),p=String(r.typ||"—").trim()||"—"; if(ostFT[f]&&ostFT[f][p]){ostFT[f][p].cSom+=r.sum||0;ostFT[f][p].cUsd+=r.usd||0;}});
+    return { k, x, kirim, chiqim, ostatka:kirim-chiqim, kirimSom, chiqimSom, ostatkaSom:kirimSom-chiqimSom, agents:grp(k,"manager"), cats:grp(x,"cat"), typs, kMon:monAgg(k), xMon:monAgg(x), filials, paytypes, ostFT };
   }, [cur, prixod, xarajat, period, from, to]);
 
   const exportXl = () => {
@@ -596,7 +612,7 @@ function FilialKesmi({ prixod, xarajat }){
         </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:10,alignItems:"center",paddingTop:10,borderTop:bdr}}>
           <span style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginRight:2}}>📅 Davr:</span>
-          {[["all","Barchasi"],["today","Bugun"],["7","7 kun"],["30","30 kun"],["month","Bu oy"],["year","Bu yil"]].map(([pv,pl])=>{
+          {[["all","Barchasi"],["today","Bugun"],["kecha","Kecha"],["7","7 kun"],["30","30 kun"],["month","Bu oy"],["year","Bu yil"]].map(([pv,pl])=>{
             const act=period===pv&&!from&&!to;
             return <button key={pv} onClick={()=>{setPeriod(pv);setFrom("");setTo("");}} style={{border:"1px solid "+(act?"#0e7490":"#e2e8f0"),background:act?"#ecfeff":"#fff",color:act?"#0e7490":"#64748b",borderRadius:20,padding:"4px 13px",fontSize:11.5,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>{pl}</button>;
           })}
@@ -657,6 +673,48 @@ function FilialKesmi({ prixod, xarajat }){
               </table>
             </div>
           </div>
+
+          {cur==="*" && v.filials.length>0 && (
+            <div className="fcard" style={{background:"#fff",borderRadius:13,border:bdr,overflow:"hidden",boxShadow:"var(--shadow-sm)",marginBottom:12}}>
+              <div style={{padding:"11px 15px",borderBottom:bdr,background:"linear-gradient(135deg,#fffbeb,#fef3c7)"}}>
+                <span style={{fontWeight:800,fontSize:13.5,color:"#0f172a"}}>🪙 Filiallar × to'lov turi — Ostatka (Kirim − Chiqim)</span>
+                <span style={{fontSize:11,color:"#94a3b8",marginLeft:8}}>SUM va USD</span>
+              </div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+                  <thead>
+                    <tr style={{background:"#f8fafc"}}>
+                      <th style={{padding:"8px 10px",textAlign:"left",fontSize:11,color:"#64748b",textTransform:"uppercase",borderBottom:"1px solid #e2e8f0",position:"sticky",left:0,background:"#f8fafc",zIndex:2}}>Filial</th>
+                      {v.paytypes.map(p=><th key={p} colSpan={2} style={{padding:"7px 10px",textAlign:"center",fontSize:11.5,fontWeight:800,color:"#334155",borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap"}}>{p}</th>)}
+                      <th colSpan={2} style={{padding:"7px 10px",textAlign:"center",fontSize:11.5,fontWeight:800,color:"#7c3aed"}}>JAMI</th>
+                    </tr>
+                    <tr style={{background:"#f8fafc"}}>
+                      <th style={{position:"sticky",left:0,background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}></th>
+                      {v.paytypes.map(p=>[<th key={p+"s"} style={{padding:"4px 10px",textAlign:"right",fontSize:10,color:"#94a3b8",borderBottom:"2px solid #e2e8f0"}}>SUM</th>,<th key={p+"u"} style={{padding:"4px 10px",textAlign:"right",fontSize:10,color:"#94a3b8",borderBottom:"2px solid #e2e8f0"}}>USD</th>])}
+                      <th style={{padding:"4px 10px",textAlign:"right",fontSize:10,color:"#94a3b8",borderBottom:"2px solid #e2e8f0"}}>SUM</th><th style={{padding:"4px 10px",textAlign:"right",fontSize:10,color:"#94a3b8",borderBottom:"2px solid #e2e8f0"}}>USD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {v.filials.map(f=>{ let js=0,ju=0; v.paytypes.forEach(p=>{const o=v.ostFT[f][p]; js+=o.kSom-o.cSom; ju+=o.kUsd-o.cUsd;});
+                      return <tr key={f} style={{borderBottom:"1px solid #f1f5f9"}}>
+                        <td style={{padding:"7px 10px",fontWeight:700,color:"#0e7490",position:"sticky",left:0,background:"#fff"}}>{f}</td>
+                        {v.paytypes.map(p=>{const o=v.ostFT[f][p]; const s=o.kSom-o.cSom,u=o.kUsd-o.cUsd; return [<td key={p+"s"} style={{padding:"7px 10px",textAlign:"right",color:s?"#0f172a":"#cbd5e1"}}>{s?som(s):"—"}</td>,<td key={p+"u"} style={{padding:"7px 10px",textAlign:"right",color:u<0?"#dc2626":(u?"#0f172a":"#cbd5e1")}}>{u?som(u):"—"}</td>];})}
+                        <td style={{padding:"7px 10px",textAlign:"right",fontWeight:800,color:"#7c3aed",background:"#faf5ff"}}>{som(js)}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",fontWeight:800,color:"#7c3aed",background:"#faf5ff"}}>{ju?som(ju):"—"}</td>
+                      </tr>;})}
+                  </tbody>
+                  <tfoot>
+                    <tr style={{background:"#f8fafc",fontWeight:800,borderTop:"2px solid #e2e8f0"}}>
+                      <td style={{padding:"8px 10px",position:"sticky",left:0,background:"#f8fafc"}}>JAMI</td>
+                      {v.paytypes.map(p=>{let s=0,u=0; v.filials.forEach(f=>{const o=v.ostFT[f][p]; s+=o.kSom-o.cSom; u+=o.kUsd-o.cUsd;}); return [<td key={p+"s"} style={{padding:"8px 10px",textAlign:"right"}}>{som(s)}</td>,<td key={p+"u"} style={{padding:"8px 10px",textAlign:"right"}}>{u?som(u):"—"}</td>];})}
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"#7c3aed"}}>{som(v.ostatkaSom)}</td>
+                      <td style={{padding:"8px 10px",textAlign:"right",color:"#7c3aed"}}>{v.ostatka?som(v.ostatka):"—"}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          )}
 
           <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
             {breakTbl("Kirim — agentlar kesmida","📥",v.agents,"#059669","Agent")}
@@ -4536,7 +4594,7 @@ function App(){
                   {id:"kassa",  ic:"💰",l:"Kassa xisobi",cnt:null,clr:"#7c3aed",disabled:!data.length&&!prixodData.length},
                   {id:"px", ic:"📊",l:"Prixod / Xarajat",cnt:null,clr:"#059669",disabled:!(prixodData.length||data.length)},
                   {id:"dilpost",ic:"🤝",l:"Diller / Postav.",cnt:null,clr:"#0891b2",disabled:false},
-                  {id:"spravochnik",ic:"📇",l:"Klientlar",cnt:prixodData.length?[...new Set(prixodData.map(r=>String(r.client||'').trim()).filter(Boolean))].length:null,clr:"#4338ca",disabled:!prixodData.length},
+                  {id:"spravochnik",ic:"📚",l:"Baza",cnt:null,clr:"#4338ca",disabled:!(prixodData.length||data.length)},
                 ].map((t,i)=>(
                   <button key={t.id}
                     onClick={()=>!t.disabled&&setActiveTab(t.id)}
@@ -4686,7 +4744,7 @@ function App(){
             )}
 
             {activeTab==="spravochnik"&&(
-              <SpravochnikView rows={prixodData}/>
+              <SpravochnikView prixod={prixodData} xarajat={data}/>
             )}
 
             {activeTab==="filkesmi"&&(
