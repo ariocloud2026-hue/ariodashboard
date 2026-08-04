@@ -462,6 +462,8 @@ function FilialKesmi({ prixod, xarajat }){
   const [period, setPeriod] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [detail, setDetail] = useState(null);
+  const openDetail = (title, rows) => setDetail({ title, rows: rows||[] });
   const bdr = "1px solid #e2e8f0";
   const som = n => Math.round(n||0).toLocaleString("ru-RU");
   const FIL_ORDER = ["Sotuv","Andijon","Farg'ona","Nukus","Qarshi","Samarqand","Sirdaryo","Jizzax","Toshkent"];
@@ -496,7 +498,7 @@ function FilialKesmi({ prixod, xarajat }){
     const x = xarajat.filter(r=>(cur==="*" || String(r.flabel||r.filial||"")===cur) && inP(r));
     const kirim = k.reduce((s,r)=>s+(r.usd||0),0), chiqim = x.reduce((s,r)=>s+(r.usd||0),0);
     const kirimSom = k.reduce((s,r)=>s+(r.sum||0),0), chiqimSom = x.reduce((s,r)=>s+(r.sum||0),0);
-    const grp = (rows,key)=>{ const m={}; rows.forEach(r=>{ const g=String(r[key]||"—").trim()||"—"; if(!m[g])m[g]={n:g,usd:0,cnt:0}; m[g].usd+=r.usd||0; m[g].cnt++; }); return Object.values(m).sort((a,b)=>b.usd-a.usd); };
+    const grp = (rows,key)=>{ const m={}; rows.forEach(r=>{ const g=String(r[key]||"—").trim()||"—"; if(!m[g])m[g]={n:g,usd:0,cnt:0,rows:[]}; m[g].usd+=r.usd||0; m[g].cnt++; m[g].rows.push(r); }); return Object.values(m).sort((a,b)=>b.usd-a.usd); };
     const typM = {};
     const bt = (rows,which)=>rows.forEach(r=>{ const t=String(r.typ||"—").trim()||"—"; if(!typM[t])typM[t]={typ:t,kSom:0,kUsd:0,cSom:0,cUsd:0}; if(which==="k"){typM[t].kSom+=r.sum||0;typM[t].kUsd+=r.usd||0;}else{typM[t].cSom+=r.sum||0;typM[t].cUsd+=r.usd||0;} });
     bt(k,"k"); bt(x,"c");
@@ -555,7 +557,7 @@ function FilialKesmi({ prixod, xarajat }){
             {rows.length===0 ? <tr><td colSpan={3} style={{padding:20,textAlign:"center",color:"#cbd5e1"}}>—</td></tr> :
              rows.slice(0,300).map((r,i)=>(
               <tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
-                <td style={{padding:"7px 11px",fontWeight:600,color:"#1e293b",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.n}>{r.n}</td>
+                <td onClick={()=>openDetail(r.n, r.rows||[])} style={{padding:"7px 11px",fontWeight:700,color:"#2563eb",cursor:"pointer",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.n}>{r.n}</td>
                 <td style={{padding:"7px 11px",textAlign:"right",fontWeight:700,color:clr}}>{f2(r.usd)}</td>
                 <td style={{padding:"7px 11px",textAlign:"right",color:"#94a3b8"}}>{r.cnt}</td>
               </tr>))}
@@ -655,7 +657,7 @@ function FilialKesmi({ prixod, xarajat }){
                   {v.typs.length===0 ? <tr><td colSpan={7} style={{padding:20,textAlign:"center",color:"#cbd5e1"}}>—</td></tr> :
                    v.typs.map((t,i)=>(
                     <tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
-                      <td style={{padding:"8px 11px",fontWeight:700,color:"#1e293b"}}>{t.typ}</td>
+                      <td onClick={()=>openDetail("To'lov turi — "+t.typ,[...v.k.filter(r=>(String(r.typ||"—").trim()||"—")===t.typ),...v.x.filter(r=>(String(r.typ||"—").trim()||"—")===t.typ)])} style={{padding:"8px 11px",fontWeight:700,color:"#1e293b",cursor:"pointer"}}>{t.typ}</td>
                       <td style={{padding:"8px 11px",textAlign:"right",color:"#059669",fontWeight:600}}>{f2(t.kUsd)}</td>
                       <td style={{padding:"8px 11px",textAlign:"right",color:"#dc2626",fontWeight:600}}>{f2(t.cUsd)}</td>
                       <td style={{padding:"8px 11px",textAlign:"right",color:t.oUsd>=0?"#0369a1":"#b45309",fontWeight:800}}>{f2(t.oUsd)}</td>
@@ -689,7 +691,7 @@ function FilialKesmi({ prixod, xarajat }){
                   <tbody>
                     {v.filials.map(f=>{const a=v.filAgg[f]; const oU=a.kUsd-a.cUsd, oS=a.kSom-a.cSom;
                       return <tr key={f} style={{borderBottom:"1px solid #f1f5f9"}}>
-                        <td style={{padding:"8px 11px",fontWeight:700,color:"#1e40af"}}>{f}</td>
+                        <td onClick={()=>openDetail("Filial — "+f,[...v.k.filter(r=>String(r.flabel||r.filial||"")===f),...v.x.filter(r=>String(r.flabel||r.filial||"")===f)])} style={{padding:"8px 11px",fontWeight:700,color:"#1e40af",cursor:"pointer"}}>{f}</td>
                         <td style={{padding:"8px 11px",textAlign:"right",color:"#059669",fontWeight:600}}>{f2(a.kUsd)}</td>
                         <td style={{padding:"8px 11px",textAlign:"right",color:"#dc2626",fontWeight:600}}>{f2(a.cUsd)}</td>
                         <td style={{padding:"8px 11px",textAlign:"right",color:oU>=0?"#0369a1":"#b45309",fontWeight:800}}>{f2(oU)}</td>
@@ -720,6 +722,49 @@ function FilialKesmi({ prixod, xarajat }){
           {recTbl("Chiqim yozuvlari (to'liq)","📤",v.x,"chiqim")}
         </>
       )}
+      {detail && <FKDetail detail={detail} onClose={()=>setDetail(null)} som={som}/>}
+    </div>
+  );
+}
+
+/* Filial kesmi detal oynasi (modal) */
+function FKDetail({ detail, onClose, som }){
+  const rows = detail.rows||[];
+  const totUsd = rows.reduce((s,r)=>s+(r.usd||0),0), totSom = rows.reduce((s,r)=>s+(r.sum||0),0);
+  const exp = () => { try{ const a=[["Sana","Oy","Filial","Klient/FIO","Agent","Tip","Kategoriya","Izoh","Valyuta","Kurs","Summa","Summa $"]];
+    rows.forEach(r=>a.push([r.dayLabel||"",r.month||"",r.flabel||r.filial||"",r.client||r.fio||"",r.manager||"",r.typ||"",r.cat||"",r.desc||"",r.cur||"",Math.round(r.rate||0),r.sum||0,r.usd||0]));
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(a),"Detal"); XLSX.writeFile(wb,"Detal.xlsx"); }catch(e){} };
+  return (
+    <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(15,23,42,.55)",zIndex:60,display:"flex",alignItems:"flex-end",justifyContent:"center",padding:0}}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#fff",width:"100%",maxWidth:920,maxHeight:"88vh",borderRadius:"18px 18px 0 0",display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 18px",borderBottom:"1px solid #e2e8f0"}}>
+          <div><div style={{fontWeight:800,fontSize:15,color:"#0f172a"}}>{detail.title}</div><div style={{fontSize:12,color:"#94a3b8"}}>{rows.length} yozuv · {som(totSom)} so'm · {f2(totUsd)}</div></div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={exp} style={{border:"1px solid #bbf7d0",background:"#f0fdf4",color:"#15803d",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,cursor:"pointer"}}>📥 Excel</button>
+            <button onClick={onClose} style={{background:"#f1f5f9",border:"none",width:32,height:32,borderRadius:8,fontSize:18,cursor:"pointer",color:"#64748b"}}>×</button>
+          </div>
+        </div>
+        <div style={{overflow:"auto",padding:"6px 12px 20px"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
+            <thead><tr style={{background:"#f8fafc"}}>{["Sana","Filial","Klient/FIO","Agent","Tip","Kategoriya","Izoh","Kurs","Summa","$"].map((h,i)=><th key={i} style={{padding:"6px 9px",textAlign:i>6?"right":"left",fontSize:10.5,color:"#64748b",textTransform:"uppercase",whiteSpace:"nowrap",position:"sticky",top:0,background:"#f8fafc"}}>{h}</th>)}</tr></thead>
+            <tbody>{rows.slice(0,400).map((r,i)=>(
+              <tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
+                <td style={{padding:"5px 9px",whiteSpace:"nowrap",color:"#94a3b8"}}>{r.dayLabel||r.month||"—"}</td>
+                <td style={{padding:"5px 9px"}}>{r.flabel||r.filial||"—"}</td>
+                <td style={{padding:"5px 9px"}}>{r.client||r.fio||"—"}</td>
+                <td style={{padding:"5px 9px"}}>{r.manager||"—"}</td>
+                <td style={{padding:"5px 9px",color:"#64748b"}}>{r.typ||"—"}</td>
+                <td style={{padding:"5px 9px",color:"#64748b"}}>{r.cat||"—"}</td>
+                <td style={{padding:"5px 9px",color:"#94a3b8",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={r.desc||""}>{r.desc||"—"}</td>
+                <td style={{padding:"5px 9px",textAlign:"right",color:"#7c3aed"}}>{som(r.rate)}</td>
+                <td style={{padding:"5px 9px",textAlign:"right"}}>{som(r.sum)}</td>
+                <td style={{padding:"5px 9px",textAlign:"right",fontWeight:600,color:"#059669"}}>{f2(r.usd)}</td>
+              </tr>))}
+            </tbody>
+          </table>
+          {rows.length>400&&<div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>Ko'rsatilmoqda: 400 / {rows.length}</div>}
+        </div>
+      </div>
     </div>
   );
 }
@@ -961,6 +1006,11 @@ function exportXlsx(rows, filename){
 function exportDashboardXlsx({ groupsArr, fils, cx, cT, fT, grand, filteredData, dateFrom, dateTo, filename }){
   if(!filteredData || !filteredData.length) return;
   const wb = XLSX.utils.book_new();
+
+  /* ── Sheet 0: Umumiy (jami) ── */
+  const usum=[["XARAJAT — UMUMIY"],[],["Jami $",Math.round(grand)],["Yozuvlar soni",filteredData.length],[],["Filial","Jami $"]];
+  fils.forEach(f=>usum.push([f.label,Math.round(fT[f.name]||0)]));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(usum), "Umumiy");
 
   /* ── Sheet 1: Kategoriya × Filial pivot (same layout as screen) ── */
   const aoa     = [];
@@ -1972,7 +2022,7 @@ function FilialModal({ filial, flabel, data, onClose, openCat, groups }){
   const [chartTab, setChartTab] = useState("oy");
   const [tip,      setTip]      = useState(null);
 
-  const rows   = data.filter(r => r.filial === filial);
+  const rows   = filial === "*" ? data : data.filter(r => r.filial === filial);
   const total  = rows.reduce((s,r) => s + r.usd, 0);
   const mChart = aggByMonth(rows);
   const dChart = aggByDay(rows);
@@ -4787,10 +4837,15 @@ function App(){
                   </span>}
                 </div>
                 <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                  <button disabled={!filteredPrixodData.length} onClick={()=>filteredPrixodData.length&&setPrixodFilM({flabel:"Umumiy — barcha filiallar",rows:filteredPrixodData})}
+                    style={{display:"flex",alignItems:"center",gap:5,padding:"5px 12px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid #ddd6fe",background:"linear-gradient(135deg,#7c3aed,#6366f1)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>🌐 Umumiy</button>
                   <button disabled={!filteredPrixodData.length}
                     onClick={()=>{
                       if(!filteredPrixodData.length) return;
                       const wb=XLSX.utils.book_new();
+                      const usum=[["PRIXOD — UMUMIY"],[],["Jami $",Math.round(grandP)],["Yozuvlar soni",filteredPrixodData.length],[],["Filial","Jami $"]];
+                      pFils.forEach(f=>usum.push([f.label,Math.round(fTP[f.name]||0)]));
+                      XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet(usum),"Umumiy");
                       const cc=1+pFils.length+1;
                       const aoa=[[`PRIXOD - AGENT x FILIAL | Jami: ${f2(grandP)} | ${filteredPrixodData.length} yozuv`]];
                       aoa.push(new Array(cc).fill(null));
@@ -4932,6 +4987,8 @@ function App(){
                   </span>}
                 </div>
                 <div style={{display:"flex", gap:6, alignItems:"center"}}>
+                  <button onClick={()=>data.length&&setFilM({filial:"*",flabel:"Umumiy — barcha filiallar"})} disabled={!data.length}
+                    style={{display:"flex",alignItems:"center",gap:5,padding:"5px 11px",fontSize:11,fontWeight:700,borderRadius:7,border:"1px solid #ddd6fe",background:"linear-gradient(135deg,#7c3aed,#6366f1)",color:"#fff",cursor:"pointer",whiteSpace:"nowrap"}}>🌐 Umumiy</button>
                   {cats.length > 0 && !isMobile&&(
                     <button onClick={() => setShowGrpEd(true)}
                       style={{display:"flex", alignItems:"center", gap:5, padding:"5px 11px", fontSize:11,
