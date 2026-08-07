@@ -123,8 +123,8 @@ button:active{transform:translateY(1px)}
 const { useState, useRef, useCallback, useMemo, useEffect } = React;
 
 /* ─── Constants ─────────────────────────────────────────────────────────── */
-const SH = ["sotuv_0","andijon_01","fargona_02","nukus_03","qarshi_04","samarqand_05","sirdaryo_06","jizzax_07","toshkent_08"];
-const LB = {sotuv_0:"Sotuv",andijon_01:"Andijon",fargona_02:"Farg'ona",nukus_03:"Nukus",qarshi_04:"Qarshi",samarqand_05:"Samarqand",sirdaryo_06:"Sirdaryo",jizzax_07:"Jizzax",toshkent_08:"Toshkent"};
+const SH = ["sotuv_0","andijon_01","fargona_02","nukus_03","qarshi_04","samarqand_05","sirdaryo_06","jizzax_07","toshkent_08","namangan_09","buxoro_010"];
+const LB = {sotuv_0:"Sotuv",andijon_01:"Andijon",fargona_02:"Farg'ona",nukus_03:"Nukus",qarshi_04:"Qarshi",samarqand_05:"Samarqand",sirdaryo_06:"Sirdaryo",jizzax_07:"Jizzax",toshkent_08:"Toshkent",namangan_09:"Namangan",buxoro_010:"Buxoro"};
 const MO = ["","Yan","Fev","Mar","Apr","May","Iyn","Iyl","Avg","Sen","Okt","Noy","Dek"];
 const RUMO = {"январ":1,"феврал":2,"март":3,"апрел":4,"май":5,"июн":6,"июл":7,"август":8,"сентябр":9,"октябр":10,"ноябр":11,"декабр":12};
 
@@ -466,7 +466,7 @@ function FilialKesmi({ prixod, xarajat }){
   const openDetail = (title, rows) => setDetail({ title, rows: rows||[] });
   const bdr = "1px solid #e2e8f0";
   const som = n => Math.round(n||0).toLocaleString("ru-RU");
-  const FIL_ORDER = ["Sotuv","Andijon","Farg'ona","Nukus","Qarshi","Samarqand","Sirdaryo","Jizzax","Toshkent"];
+  const FIL_ORDER = ["Sotuv","Andijon","Farg'ona","Nukus","Qarshi","Samarqand","Sirdaryo","Jizzax","Toshkent","Namangan","Buxoro"];
 
   const filials = useMemo(()=>{
     const s = new Set();
@@ -1002,6 +1002,64 @@ function exportXlsx(rows, filename){
   XLSX.writeFile(wb, safeName(filename) + ".xlsx");
 }
 
+/* ─── Pivot AOA quruvchi (modal jadvalini "Umumiy" varaq uchun) ─────────── */
+// rowHeader: chap ustun sarlavhasi | items: [{key,label}] | cols: [{key,label}]
+// getVal(rowKey,colKey) → USD | title: (ixtiyoriy) tepadagi sarlavha qatori
+function buildPivotAoa(rowHeader, items, cols, getVal, title){
+  const R = Math.round;
+  const aoa = [];
+  if(title){ aoa.push([title]); aoa.push([]); }
+  aoa.push([rowHeader, ...cols.map(c => c.label), "JAMI"]);
+  const colTot = cols.map(() => 0);
+  let grand = 0;
+  for(const it of items){
+    let rt = 0;
+    const row = [it.label];
+    cols.forEach((c, i) => { const v = getVal(it.key, c.key) || 0; row.push(v ? R(v) : null); rt += v; colTot[i] += v; });
+    row.push(R(rt)); grand += rt;
+    aoa.push(row);
+  }
+  aoa.push(["JAMI", ...colTot.map(R), R(grand)]);
+  return aoa;
+}
+
+/* ─── Umumiy (pivot) + Yozuvlar bitta faylda ────────────────────────────── */
+// Avval modaldagi umumiy jadval "Umumiy" varag'ida, keyin "Yozuvlar" varag'ida
+function exportPivotXlsx(pivotAoa, rows, filename){
+  try{
+    const wb = XLSX.utils.book_new();
+    // Sheet 0: Umumiy (ekrandagi pivot jadval)
+    if(pivotAoa && pivotAoa.length){
+      const wsU = XLSX.utils.aoa_to_sheet(pivotAoa);
+      const nCol = pivotAoa.reduce((m,r)=>Math.max(m, r.length), 0);
+      wsU["!cols"] = [{wch:30}, ...Array(Math.max(0,nCol-1)).fill({wch:13})];
+      XLSX.utils.book_append_sheet(wb, wsU, "Umumiy");
+    }
+    // Sheet 1: Yozuvlar (batafsil qatorlar — exportXlsx bilan bir xil ustunlar)
+    if(rows && rows.length){
+      const aoa = rows.map(r => ({
+        "Sana": r.dayLabel || "",
+        "Oy": r.month || "",
+        "Filial": r.flabel || "",
+        "Kategoriya": r.cat || "",
+        "ФИО": r.fio || "",
+        "Клиент": r.client || "",
+        "Менеджер": r.manager || "",
+        "Тип оплата": r.typ || "",
+        "Описание": r.desc || "",
+        "Валюта": r.cur || "",
+        "Курс": Math.round(r.rate||0),
+        "Сумма": r.sum || 0,
+        "Сумма $": r.usd || 0,
+      }));
+      const ws = XLSX.utils.json_to_sheet(aoa);
+      ws["!cols"] = [{wch:11},{wch:13},{wch:13},{wch:26},{wch:18},{wch:20},{wch:18},{wch:14},{wch:30},{wch:8},{wch:10},{wch:13},{wch:13}];
+      XLSX.utils.book_append_sheet(wb, ws, "Yozuvlar");
+    }
+    XLSX.writeFile(wb, safeName(filename) + ".xlsx");
+  }catch(e){ alert("Excel xatosi: " + e.message); }
+}
+
 /* ─── Dashboard Excel export (pivot format + raw data) ──────────────────── */
 function exportDashboardXlsx({ groupsArr, fils, cx, cT, fT, grand, filteredData, dateFrom, dateTo, filename }){
   if(!filteredData || !filteredData.length) return;
@@ -1148,12 +1206,12 @@ function DashboardExportBtn({ groupsArr, fils, cx, cT, fT, grand, filteredData, 
 }
 
 /* ─── Export button (small, reusable) ───────────────────────────────────── */
-function ExportBtn({ rows, filename, label }){
+function ExportBtn({ rows, filename, label, pivot }){
   const n = rows ? rows.length : 0;
   return (
     <button
       disabled={n === 0}
-      onClick={() => exportXlsx(rows, filename)}
+      onClick={() => (pivot && pivot.length ? exportPivotXlsx(pivot, rows, filename) : exportXlsx(rows, filename))}
       title={n === 0 ? "Yozuv yo'q" : `${n} ta yozuvni Excel'ga yuklab olish`}
       style={{display:"flex", alignItems:"center", gap:5, padding:"5px 12px", fontSize:11, fontWeight:600,
         borderRadius:7, border:"1px solid " + (n ? "#bbf7d0" : "#e2e8f0"),
@@ -1917,7 +1975,12 @@ function CatModal({ cat, filial, flabel, data, onClose }){
                     </span>
                   )}
                 </SL>
-                <ExportBtn rows={rows} filename={[titleTxt, "barcha_yozuvlar"].join("_")}/>
+                <ExportBtn rows={rows} filename={[titleTxt, "barcha_yozuvlar"].join("_")}
+                  pivot={buildPivotAoa(useDays ? "Filial (kunlik)" : "Filial",
+                    filData.map(f => ({ key:f.filial, label:f.label || f.filial })),
+                    cols,
+                    (fk, ck) => cdx[fk]?.[ck] || 0,
+                    titleTxt + " — " + (useDays ? "Filial × Kun" : "Filial × Oy"))}/>
               </div>
               <div style={{overflowX:"auto", borderRadius:11, border:"1px solid #e2e8f0", marginBottom:14, boxShadow:"var(--shadow-xs)"}}>
                 <table style={{borderCollapse:"collapse", fontSize:"11.5px", minWidth:"100%"}}>
@@ -2123,7 +2186,12 @@ function FilialModal({ filial, flabel, data, onClose, openCat, groups }){
           {/* Kategoriya × Oy table */}
           <div style={{display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, flexWrap:"wrap"}}>
             <SL>Kategoriya × Oy — katakka bosing: yozuvlar ko'rinadi</SL>
-            <ExportBtn rows={rows} filename={flabel + "_barcha_yozuvlar"}/>
+            <ExportBtn rows={rows} filename={flabel + "_barcha_yozuvlar"}
+              pivot={buildPivotAoa("Kategoriya",
+                cats.map(c => ({ key:c, label:c })),
+                months.map(m => ({ key:m.ms, label:m.label })),
+                (c, ms) => cx[c]?.[ms] || 0,
+                "🏢 " + flabel + " — Kategoriya × Oy")}/>
           </div>
           <div style={{overflowX:"auto", borderRadius:11, border:bdr, marginBottom:14, boxShadow:"var(--shadow-xs)"}}>
             <table style={{borderCollapse:"collapse", fontSize:"11.5px", minWidth:"100%"}}>
@@ -2328,7 +2396,12 @@ function AgentModal({ agent, flabel, rows, onClose, openPrixod, roleLabel="Agent
           {/* Tip Oplata × Oy table */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
             <SL>Tip Oplata × Oy — katakka bosing: yozuvlar ko'rinadi</SL>
-            <ExportBtn rows={rows} filename={"Agent_"+agent.replace(/\s+/g,"_")+"_yozuvlar"}/>
+            <ExportBtn rows={rows} filename={"Agent_"+agent.replace(/\s+/g,"_")+"_yozuvlar"}
+              pivot={buildPivotAoa("Tip Oplata",
+                tips.map(t => ({ key:t, label:t })),
+                months.map(m => ({ key:m.ms, label:m.label })),
+                (t, ms) => tx[t]?.[ms] || 0,
+                roleLabel + ": " + agent + (flabel ? " · " + flabel : "") + " — Tip Oplata × Oy")}/>
           </div>
           <div style={{overflowX:"auto",borderRadius:11,border:bdr,marginBottom:14,boxShadow:"var(--shadow-xs)"}}>
             <table style={{borderCollapse:"collapse",fontSize:"11.5px",minWidth:"100%"}}>
@@ -2832,7 +2905,12 @@ function PrixodFilialModal({ flabel, rows, onClose, openAgent }){
           {/* Agent/Klient × Oy table */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,flexWrap:"wrap"}}>
             <SL>{roleLabel} × Oy — katakka bosing: yozuvlar ko'rinadi</SL>
-            <ExportBtn rows={rows} filename={flabel+"_prixod_yozuvlar"}/>
+            <ExportBtn rows={rows} filename={flabel+"_prixod_yozuvlar"}
+              pivot={buildPivotAoa(roleLabel,
+                agents.map(a => ({ key:a, label:a })),
+                months.map(m => ({ key:m.ms, label:m.label })),
+                (a, ms) => cx[a]?.[ms] || 0,
+                "🏢 " + flabel + " — " + roleLabel + " × Oy")}/>
           </div>
           <div style={{overflowX:"auto",borderRadius:11,border:bdr,marginBottom:14,boxShadow:"var(--shadow-xs)"}}>
             <table style={{borderCollapse:"collapse",fontSize:"11.5px",minWidth:"100%"}}>
