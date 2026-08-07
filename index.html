@@ -21,6 +21,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" onerror="window._cdnErr='ReactDOM'"></script>
 <script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js" onerror="window._cdnErr='Babel'"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" onerror="window._cdnErr='XLSX'"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" onerror="window._cdnErr='html2canvas'"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -784,6 +785,35 @@ function TodayCard({ prixod, xarajat }){
   const bump = (arr,key)=>arr.forEach(r=>{ const f=String(r.flabel||r.filial||"—").trim()||"—"; if(!fmap[f])fmap[f]={filial:f,kirim:0,chiqim:0,rows:[]}; fmap[f][key]+=r.usd||0; fmap[f].rows.push(r); });
   bump(kRows,"kirim"); bump(xRows,"chiqim");
   const fils = Object.values(fmap).map(o=>({...o,net:o.kirim-o.chiqim})).sort((a,b)=>b.kirim-a.kirim);
+
+  // ── Telegram kunlik hisobot ──
+  const reportRef = useRef(null);
+  const [tgTok,  setTgTok]  = useState(() => lsGet("tg_token", ""));
+  const [tgChat, setTgChat] = useState(() => lsGet("tg_chat", ""));
+  const [tgCfg,  setTgCfg]  = useState(false);
+  const [tgBusy, setTgBusy] = useState(false);
+  const [tgMsg,  setTgMsg]  = useState(null); // {ok, text}
+  const saveTg = () => { lsSet("tg_token", tgTok.trim()); lsSet("tg_chat", tgChat.trim()); setTgMsg({ok:true, text:"Saqlandi ✓"}); setTimeout(()=>setTgMsg(null), 2500); };
+  // Chiqim — kategoriyalar (top)
+  const _catMap = {}; xRows.forEach(r=>{ const c=String(r.cat||"—").trim()||"—"; _catMap[c]=(_catMap[c]||0)+(r.usd||0); });
+  const topCats = Object.entries(_catMap).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8);
+  const genTime = `${label} ${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
+  const sendTg = async () => {
+    setTgMsg(null);
+    if(!kRows.length && !xRows.length){ setTgMsg({ok:false, text:"Bugun uchun ma'lumot yo'q"}); return; }
+    if(!tgTok.trim() || !tgChat.trim()){ setTgCfg(true); setTgMsg({ok:false, text:"Avval bot tokeni va guruh chat_id ni kiriting"}); return; }
+    try{
+      setTgBusy(true); setTgMsg({ok:true, text:"Rasm tayyorlanmoqda…"});
+      const blob = await captureToBlob(reportRef.current, 2);
+      setTgMsg({ok:true, text:"Yuborilmoqda…"});
+      const caption = "📊 <b>Kunlik hisobot</b> — " + label
+        + "\n📥 Kirim: " + f2(kirim) + "   📤 Chiqim: " + f2(chiqim) + "   💰 Sof: " + f2(net);
+      await sendPhotoToTelegram(blob, caption, tgTok, tgChat);
+      setTgMsg({ok:true, text:"✅ Guruhga yuborildi!"});
+    }catch(e){ setTgMsg({ok:false, text:"❌ " + e.message}); }
+    finally{ setTgBusy(false); }
+  };
+
   const exportFil = () => {
     try{
       const wb = XLSX.utils.book_new();
@@ -811,6 +841,41 @@ function TodayCard({ prixod, xarajat }){
       <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:9}}>
         <span style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>📅 Bugun</span>
         <span style={{fontSize:12,color:"#94a3b8",fontWeight:600}}>{label}</span>
+      </div>
+
+      {/* ── Telegram: kunlik hisobotni guruhga rasm qilib yuborish ── */}
+      <div style={{marginBottom:12,background:"#fff",border:bdr,borderRadius:12,padding:"10px 13px",boxShadow:"var(--shadow-sm)"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:17}}>📮</span>
+          <span style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>Telegram guruhga kunlik hisobot</span>
+          <div style={{flex:1,minWidth:8}}/>
+          <button onClick={()=>setTgCfg(v=>!v)}
+            style={{display:"inline-flex",alignItems:"center",gap:5,padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid #e2e8f0",background:"#f8fafc",color:"#475569",cursor:"pointer",whiteSpace:"nowrap"}}>🔧 Sozlash</button>
+          <button onClick={sendTg} disabled={tgBusy}
+            style={{display:"inline-flex",alignItems:"center",gap:5,padding:"6px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid "+(tgBusy?"#e2e8f0":"#93c5fd"),background:tgBusy?"#f1f5f9":"linear-gradient(135deg,#3b82f6,#2563eb)",color:tgBusy?"#94a3b8":"#fff",cursor:tgBusy?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+            {tgBusy?"⏳ Yuborilmoqda…":"📤 Guruhga yuborish"}</button>
+        </div>
+        {tgMsg && <div style={{marginTop:8,fontSize:12,fontWeight:600,color:tgMsg.ok?"#15803d":"#dc2626"}}>{tgMsg.text}</div>}
+        {tgCfg && (
+          <div style={{marginTop:11,display:"grid",gap:9,borderTop:"1px dashed #e2e8f0",paddingTop:11}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#64748b"}}>Bot token
+              <input value={tgTok} onChange={e=>setTgTok(e.target.value)} placeholder="123456789:AAExxxxxxxxxxxxxxxxxxxxxxxxx"
+                style={{display:"block",width:"100%",marginTop:4,padding:"7px 10px",fontSize:12,border:"1px solid #e2e8f0",borderRadius:8,fontFamily:"monospace",color:"#0f172a",outline:"none"}}/>
+            </label>
+            <label style={{fontSize:11,fontWeight:700,color:"#64748b"}}>Guruh chat_id
+              <input value={tgChat} onChange={e=>setTgChat(e.target.value)} placeholder="-1001234567890"
+                style={{display:"block",width:"100%",marginTop:4,padding:"7px 10px",fontSize:12,border:"1px solid #e2e8f0",borderRadius:8,fontFamily:"monospace",color:"#0f172a",outline:"none"}}/>
+            </label>
+            <div style={{display:"flex",gap:8}}>
+              <button onClick={saveTg} style={{padding:"7px 14px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid #bbf7d0",background:"#f0fdf4",color:"#15803d",cursor:"pointer"}}>💾 Saqlash</button>
+            </div>
+            <div style={{fontSize:10.5,color:"#94a3b8",lineHeight:1.6}}>
+              Token — <b>@BotFather</b> dan. So'ng botni guruhga qo'shing, guruhda bir marta yozing, keyin brauzerda
+              <span style={{fontFamily:"monospace",color:"#64748b"}}> api.telegram.org/bot&lt;TOKEN&gt;/getUpdates </span>
+              ni oching: <b>chat.id</b> (masalan <span style={{fontFamily:"monospace"}}>-100…</span>) shu yerda ko'rinadi. Guruhlarda id manfiy bo'ladi.
+            </div>
+          </div>
+        )}
       </div>
       <div className="kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:11}}>
         {cards.map((c,i)=>(
@@ -891,6 +956,76 @@ function TodayCard({ prixod, xarajat }){
           </div>
         </div>
       )}
+
+      {/* ── Yuboriladigan rasm (ekrandan tashqarida render qilinadi) ── */}
+      <div ref={reportRef} style={{position:"fixed",left:-10000,top:0,width:640,background:"#ffffff",padding:"24px 26px",color:"#0f172a",fontFamily:"system-ui,-apple-system,Segoe UI,Roboto,sans-serif"}}>
+        <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",borderBottom:"3px solid #2563eb",paddingBottom:12,marginBottom:16}}>
+          <div>
+            <div style={{fontSize:22,fontWeight:800,letterSpacing:"-0.02em"}}>📊 Kunlik moliyaviy hisobot</div>
+            <div style={{fontSize:13,color:"#64748b",marginTop:2}}>Barcha filiallar bo'yicha</div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:20,fontWeight:800,color:"#2563eb"}}>{label}</div>
+            <div style={{fontSize:11,color:"#94a3b8"}}>{(kRows.length+xRows.length)+" yozuv"}</div>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:18}}>
+          {[
+            {l:"KIRIM",v:f2(kirim),clr:"#059669",bg:"#ecfdf5",bd:"#a7f3d0",ic:"📥"},
+            {l:"CHIQIM",v:f2(chiqim),clr:"#dc2626",bg:"#fef2f2",bd:"#fecaca",ic:"📤"},
+            {l:"SOF (OSTATKA)",v:f2(net),clr:net>=0?"#0369a1":"#b45309",bg:net>=0?"#eff6ff":"#fffbeb",bd:net>=0?"#bfdbfe":"#fde68a",ic:net>=0?"💰":"⚠️"},
+          ].map((c,i)=>(
+            <div key={i} style={{background:c.bg,border:"1px solid "+c.bd,borderRadius:14,padding:"14px 16px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <span style={{fontSize:11,fontWeight:800,color:c.clr,letterSpacing:".4px"}}>{c.l}</span>
+                <span style={{fontSize:18}}>{c.ic}</span>
+              </div>
+              <div style={{fontSize:26,fontWeight:800,color:c.clr,letterSpacing:"-0.02em"}}>{c.v}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{fontSize:13,fontWeight:800,color:"#0f172a",margin:"0 0 8px 2px"}}>🏢 Filiallar kesmida</div>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,marginBottom:topCats.length?18:6}}>
+          <thead><tr style={{background:"#f1f5f9"}}>
+            {["Filial","Kirim","Chiqim","Ostatka"].map((h,i)=>(
+              <th key={i} style={{padding:"8px 12px",textAlign:i?"right":"left",fontSize:11,color:"#475569",fontWeight:700,letterSpacing:".3px",borderBottom:"2px solid #e2e8f0"}}>{h}</th>
+            ))}
+          </tr></thead>
+          <tbody>
+            {fils.map((f,i)=>(
+              <tr key={i} style={{borderBottom:"1px solid #eef2f7"}}>
+                <td style={{padding:"8px 12px",fontWeight:700,color:"#1e293b"}}>{f.filial}</td>
+                <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:"#059669"}}>{f2(f.kirim)}</td>
+                <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{f2(f.chiqim)}</td>
+                <td style={{padding:"8px 12px",textAlign:"right",fontWeight:800,color:f.net>=0?"#0369a1":"#b45309"}}>{f2(f.net)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot><tr style={{background:"#f8fafc",fontWeight:800,borderTop:"2px solid #e2e8f0"}}>
+            <td style={{padding:"9px 12px"}}>JAMI</td>
+            <td style={{padding:"9px 12px",textAlign:"right",color:"#059669"}}>{f2(kirim)}</td>
+            <td style={{padding:"9px 12px",textAlign:"right",color:"#dc2626"}}>{f2(chiqim)}</td>
+            <td style={{padding:"9px 12px",textAlign:"right",color:net>=0?"#0369a1":"#b45309"}}>{f2(net)}</td>
+          </tr></tfoot>
+        </table>
+        {topCats.length>0 && (
+          <React.Fragment>
+            <div style={{fontSize:13,fontWeight:800,color:"#0f172a",margin:"0 0 8px 2px"}}>{"📤 Chiqim — kategoriyalar (top " + topCats.length + ")"}</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 18px",marginBottom:8}}>
+              {topCats.map((c,i)=>(
+                <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,padding:"5px 10px",background:i%2?"#fafafa":"#f8fafc",borderRadius:6}}>
+                  <span style={{color:"#334155",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.n}</span>
+                  <span style={{fontWeight:700,color:"#dc2626",whiteSpace:"nowrap"}}>{f2(c.v)}</span>
+                </div>
+              ))}
+            </div>
+          </React.Fragment>
+        )}
+        <div style={{marginTop:14,paddingTop:10,borderTop:"1px solid #e2e8f0",display:"flex",justifyContent:"space-between",fontSize:10.5,color:"#94a3b8"}}>
+          <span>📈 Baza — moliyaviy hisobot</span>
+          <span>{"Yaratildi: " + genTime}</span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1058,6 +1193,34 @@ function exportPivotXlsx(pivotAoa, rows, filename){
     }
     XLSX.writeFile(wb, safeName(filename) + ".xlsx");
   }catch(e){ alert("Excel xatosi: " + e.message); }
+}
+
+/* ─── Telegram: xavfsiz localStorage + rasm olish + yuborish ─────────────── */
+function lsGet(k, d){ try{ const v = localStorage.getItem(k); return v == null ? d : v; }catch(e){ return d; } }
+function lsSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
+
+// DOM tugunini PNG blobga aylantirish (html2canvas)
+function captureToBlob(node, scale){
+  return new Promise((resolve, reject) => {
+    if(typeof html2canvas !== "function"){ reject(new Error("html2canvas yuklanmadi — internetni tekshiring")); return; }
+    html2canvas(node, { scale: scale || 2, backgroundColor: "#ffffff", useCORS: true, logging: false })
+      .then(canvas => canvas.toBlob(b => b ? resolve(b) : reject(new Error("Rasm yaratilmadi")), "image/png"))
+      .catch(reject);
+  });
+}
+
+// Telegramga rasm yuborish (sendPhoto, multipart)
+async function sendPhotoToTelegram(blob, caption, token, chatId){
+  if(!token)  throw new Error("Bot tokeni kiritilmagan");
+  if(!chatId) throw new Error("Guruh chat_id kiritilmagan");
+  const fd = new FormData();
+  fd.append("chat_id", String(chatId).trim());
+  if(caption){ fd.append("caption", caption); fd.append("parse_mode", "HTML"); }
+  fd.append("photo", blob, "hisobot.png");
+  const res = await fetch("https://api.telegram.org/bot" + String(token).trim() + "/sendPhoto", { method:"POST", body: fd });
+  let j = {}; try{ j = await res.json(); }catch(e){}
+  if(!res.ok || !j.ok) throw new Error(j.description || ("Telegram xatosi: HTTP " + res.status));
+  return j;
 }
 
 /* ─── Dashboard Excel export (pivot format + raw data) ──────────────────── */
