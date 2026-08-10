@@ -335,27 +335,31 @@ function reportHTML(agg, dateLabel, genTime, which, kassa){
           <span style="font-weight:700;color:#b91c1c;white-space:nowrap">${f2(c.v)}</span></div>`).join("")}
       </div></div>`).join("")}
     </div>` : "";
-  const kassaBlock = (kassa && kassa.typs.length) ? `
-    <div style="font-size:13px;font-weight:800;color:#0f172a;margin:14px 0 8px 2px">💰 Kassa Ostatka — to'lov turi bo'yicha <span style="font-weight:600;color:#94a3b8;font-size:11px">(jami · Kirim − Chiqim)</span></div>
-    <div style="display:grid;grid-template-columns:repeat(${Math.min(4, kassa.typs.length+1)},1fr);gap:10px;margin-bottom:8px">
-    ${kassa.typs.map(t=>{const c=kassa.typTot[t]||{som:0,usd:0};return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:11px;padding:10px 12px">
-        <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:4px">${esc(t)}</div>
-        <div style="font-size:15px;font-weight:800;color:${c.som<0?"#dc2626":"#0f172a"}">${fnum(c.som)} <span style="font-size:10px;color:#94a3b8;font-weight:600">so'm</span></div>
-        ${c.usd?`<div style="font-size:12px;font-weight:700;color:${c.usd<0?"#dc2626":"#15803d"};margin-top:2px">${fnum(c.usd)} <span style="font-size:9px;color:#94a3b8">$</span></div>`:""}
-      </div>`;}).join("")}
-      <div style="background:linear-gradient(145deg,#f5f3ff,#ede9fe);border:1px solid #c4b5fd;border-radius:11px;padding:10px 12px">
-        <div style="font-size:11px;font-weight:800;color:#6d28d9;margin-bottom:4px">JAMI</div>
-        <div style="font-size:15px;font-weight:800;color:${kassa.grand.som<0?"#dc2626":"#6d28d9"}">${fnum(kassa.grand.som)} <span style="font-size:10px;color:#a78bfa;font-weight:600">so'm</span></div>
-        <div style="font-size:12px;font-weight:700;color:${kassa.grand.usd<0?"#dc2626":"#15803d"};margin-top:2px">${fnum(kassa.grand.usd)} <span style="font-size:9px;color:#a78bfa">$</span></div>
-      </div>
-    </div>` : "";
+  // Kassa Ostatka — to'liq jadval (filial × to'lov turi, so'm/USD)
+  const kOst = (kassa && kassa.filLabels.length) ? (function(){
+    const th="padding:7px 9px;font-size:10px;font-weight:700;color:#64748b;background:#f8fafc;border-bottom:1px solid #e2e8f0;white-space:nowrap";
+    const num=(v,extra)=>`<td style="padding:7px 9px;font-size:11px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;color:${v<0?"#dc2626":v>0?"#1e293b":"#cbd5e1"};${extra||""}">${v?fnum(v):"—"}</td>`;
+    const head1=`<tr><th rowspan="2" style="${th};text-align:left">Filial</th>${kassa.typs.map(t=>`<th colspan="2" style="${th};text-align:center;border-left:1px solid #e2e8f0">${esc(t)}</th>`).join("")}<th colspan="2" style="${th};text-align:center;border-left:2px solid #c4b5fd;background:#f5f3ff;color:#6d28d9">JAMI</th></tr>`;
+    const head2=`<tr>${kassa.typs.map(()=>`<th style="${th};text-align:right;border-left:1px solid #e2e8f0">SUM</th><th style="${th};text-align:right">USD</th>`).join("")}<th style="${th};text-align:right;border-left:2px solid #c4b5fd;background:#f5f3ff;color:#6d28d9">SUM</th><th style="${th};text-align:right;background:#f5f3ff;color:#6d28d9">USD</th></tr>`;
+    const body=kassa.filLabels.map((fl,ri)=>{
+      const bg=ri%2?"#fcfcff":"#fff";
+      const cells=kassa.typs.map(t=>{const c=kassa.acc[fl]&&kassa.acc[fl][t]||{som:0,usd:0};return num(c.som,`background:${bg};border-left:1px solid #eef2f7`)+num(c.usd,`background:${bg}`);}).join("");
+      const ft=kassa.filTot[fl];
+      return `<tr><td style="padding:7px 9px;font-size:11px;font-weight:600;color:#4338ca;white-space:nowrap;background:${bg}">${esc(fl)}</td>${cells}${num(ft.som,`background:#faf5ff;font-weight:700;border-left:2px solid #c4b5fd;color:${ft.som<0?"#dc2626":"#6d28d9"}`)}${num(ft.usd,`background:#faf5ff;font-weight:700;color:${ft.usd<0?"#dc2626":"#6d28d9"}`)}</tr>`;
+    }).join("");
+    const jcells=kassa.typs.map(t=>{const c=kassa.typTot[t]||{som:0,usd:0};return num(c.som,`background:#f1f5f9;font-weight:700;border-left:1px solid #e2e8f0`)+num(c.usd,`background:#f1f5f9;font-weight:700`);}).join("");
+    const jrow=`<tr style="border-top:2px solid #e2e8f0"><td style="padding:8px 9px;font-size:11px;font-weight:800;background:#f1f5f9">JAMI</td>${jcells}${num(kassa.grand.som,`background:#ede9fe;font-weight:800;border-left:2px solid #c4b5fd;color:${kassa.grand.som<0?"#dc2626":"#6d28d9"}`)}${num(kassa.grand.usd,`background:#ede9fe;font-weight:800;color:${kassa.grand.usd<0?"#dc2626":"#6d28d9"}`)}</tr>`;
+    return `<div style="font-size:16px;font-weight:800;color:#0f172a;margin:0 0 8px 2px">💰 Kassa Ostatka <span style="font-size:11px;font-weight:600;color:#94a3b8">— filial × to'lov turi (jami · Kirim − Chiqim)</span></div><table style="width:100%;border-collapse:collapse;margin-bottom:20px"><thead>${head1}${head2}</thead><tbody>${body}${jrow}</tbody></table>`;
+  })() : "";
   return `<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif}</style></head>
-  <body style="background:#eef2f7;padding:20px"><div id="card" style="width:680px;background:#fff;border-radius:16px;padding:24px 26px;color:#0f172a;box-shadow:0 10px 40px rgba(15,23,42,.12)">
+  <body style="background:#eef2f7;padding:20px"><div id="card" style="width:900px;background:#fff;border-radius:16px;padding:24px 26px;color:#0f172a;box-shadow:0 10px 40px rgba(15,23,42,.12)">
     <div style="display:flex;align-items:flex-end;justify-content:space-between;border-bottom:3px solid #2563eb;padding-bottom:12px;margin-bottom:16px">
       <div><div style="font-size:22px;font-weight:800;letter-spacing:-.02em">📊 Kunlik moliyaviy hisobot</div>
       <div style="font-size:13px;color:#64748b;margin-top:2px">Kunlik yakun · barcha filiallar${which?(" · "+which):""}</div></div>
       <div style="text-align:right"><div style="font-size:20px;font-weight:800;color:#2563eb">${dateLabel}</div>
       <div style="font-size:11px;color:#94a3b8">${kRows.length+xRows.length} yozuv</div></div></div>
+    ${kOst}
+    <div style="font-size:16px;font-weight:800;color:#0f172a;margin:8px 0 10px 2px">📅 Bugungi harakat <span style="font-size:11px;font-weight:600;color:#94a3b8">— ${dateLabel}</span></div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px">
       ${tile("KIRIM",f2(kirim),"#059669","#ecfdf5","#a7f3d0","📥")}
       ${tile("CHIQIM",f2(chiqim),"#dc2626","#fef2f2","#fecaca","📤")}
@@ -374,7 +378,6 @@ function reportHTML(agg, dateLabel, genTime, which, kassa){
         <td style="padding:9px 12px;text-align:right;color:#dc2626">${f2(chiqim)}</td>
         <td style="padding:9px 12px;text-align:right;color:${net>=0?"#0369a1":"#b45309"}">${f2(net)}</td></tr></tfoot></table>
     ${chiqBlock}
-    ${kassaBlock}
     <div style="margin-top:14px;padding-top:10px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:10.5px;color:#94a3b8">
       <span>📈 Baza — moliyaviy hisobot</span><span>Yaratildi: ${dateLabel} ${genTime}</span></div>
   </div></body></html>`;
@@ -423,6 +426,9 @@ function buildExcel(agg, dateLabel, kassa){
     wsKa["!merges"]=merges; wsKa["!cols"]=[{wch:16},...Array((kassa.typs.length+1)*2).fill({wch:14})];
     XLSX.utils.book_append_sheet(wb,wsKa,"Kassa Ostatka");
   }
+  // Varaqlar tartibi: Ostatka(1) · Kirim(2) · Chiqim(3), keyin qolganlari
+  const want=["Kassa Ostatka","Kirim","Chiqim","Umumiy","Chiqim Filial×Kat"];
+  wb.SheetNames = want.filter(n=>wb.SheetNames.includes(n)).concat(wb.SheetNames.filter(n=>!want.includes(n)));
   return XLSX.write(wb,{type:"buffer",bookType:"xlsx"});
 }
 
@@ -432,7 +438,7 @@ async function getBrowser(){ if(!_browser){ _browser=await puppeteer.launch({ he
 async function renderImage(html){
   const b=await getBrowser(); const page=await b.newPage();
   try{
-    await page.setViewport({ width:740, height:900, deviceScaleFactor:2 });
+    await page.setViewport({ width:960, height:900, deviceScaleFactor:2 });
     await page.setContent(html, { waitUntil:"networkidle0" });
     const el=await page.$("#card"); return await el.screenshot({ type:"png" });
   } finally { await page.close(); }
