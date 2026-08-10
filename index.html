@@ -807,9 +807,12 @@ function TodayCard({ prixod, xarajat }){
     const fl = Object.values(fm).map(o=>({...o,net:o.kirim-o.chiqim})).sort((a,b)=>b.kirim-a.kirim);
     const cm={}; xx.forEach(r=>{ const c=String(r.cat||"—").trim()||"—"; cm[c]=(cm[c]||0)+(r.usd||0); });
     const tc=Object.entries(cm).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8);
-    return { key:dayKey, label:dayLabel, kirim:ki, chiqim:ch, net:ki-ch, fils:fl, topCats:tc, kRows:kk, xRows:xx };
+    // Chiqim — filial kesmida (har filial nimaga sarflagan)
+    const cf={}; xx.forEach(r=>{ const f=String(r.flabel||r.filial||"—").trim()||"—"; const c=String(r.cat||"—").trim()||"—"; if(!cf[f])cf[f]={filial:f,total:0,cats:{}}; cf[f].total+=r.usd||0; cf[f].cats[c]=(cf[f].cats[c]||0)+(r.usd||0); });
+    const chiqFil=Object.values(cf).map(o=>({ filial:o.filial, total:o.total, cats:Object.entries(o.cats).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v) })).sort((a,b)=>b.total-a.total);
+    return { key:dayKey, label:dayLabel, kirim:ki, chiqim:ch, net:ki-ch, fils:fl, topCats:tc, chiqFil, kRows:kk, xRows:xx };
   }
-  const todayAgg = { key:today, label, kirim, chiqim, net, fils, topCats, kRows, xRows };
+  const todayAgg = aggFor(today, label);
   const yt = new Date(t); yt.setDate(yt.getDate()-1);
   const yKey = `${yt.getFullYear()}-${pad2(yt.getMonth()+1)}-${pad2(yt.getDate())}`;
   const yLabel = `${pad2(yt.getDate())}.${pad2(yt.getMonth()+1)}.${yt.getFullYear()}`;
@@ -1077,14 +1080,24 @@ function TodayCard({ prixod, xarajat }){
             <td style={{padding:"9px 12px",textAlign:"right",color:RD.net>=0?"#0369a1":"#b45309"}}>{f2(RD.net)}</td>
           </tr></tfoot>
         </table>
-        {RD.topCats.length>0 && (
+        {RD.chiqFil.length>0 && (
           <React.Fragment>
-            <div style={{fontSize:13,fontWeight:800,color:"#0f172a",margin:"0 0 8px 2px"}}>{"📤 Chiqim — kategoriyalar (top " + RD.topCats.length + ")"}</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 18px",marginBottom:8}}>
-              {RD.topCats.map((c,i)=>(
-                <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,padding:"5px 10px",background:i%2?"#fafafa":"#f8fafc",borderRadius:6}}>
-                  <span style={{color:"#334155",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.n}</span>
-                  <span style={{fontWeight:700,color:"#dc2626",whiteSpace:"nowrap"}}>{f2(c.v)}</span>
+            <div style={{fontSize:13,fontWeight:800,color:"#0f172a",margin:"0 0 8px 2px"}}>📤 Chiqim — filial kesmida (nimaga)</div>
+            <div style={{display:"grid",gap:8,marginBottom:8}}>
+              {RD.chiqFil.map((f,i)=>(
+                <div key={i} style={{border:"1px solid #f1f5f9",borderRadius:10,overflow:"hidden"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 11px",background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
+                    <span style={{fontWeight:800,fontSize:12.5,color:"#1e293b"}}>🏢 {f.filial}</span>
+                    <span style={{fontWeight:800,fontSize:12.5,color:"#dc2626"}}>{f2(f.total)}</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"2px 16px",padding:"6px 11px"}}>
+                    {f.cats.slice(0,6).map((c,j)=>(
+                      <div key={j} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12}}>
+                        <span style={{color:"#475569",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.n}</span>
+                        <span style={{fontWeight:700,color:"#b91c1c",whiteSpace:"nowrap"}}>{f2(c.v)}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1316,9 +1329,35 @@ function aggToXlsxBlob(agg){
   u.push(["JAMI",R(agg.kirim),R(agg.chiqim),R(agg.net)]);
   const wsU = XLSX.utils.aoa_to_sheet(u); wsU["!cols"]=[{wch:22},{wch:14},{wch:14},{wch:14}];
   XLSX.utils.book_append_sheet(wb, wsU, "Umumiy");
-  // Chiqim — qaysi filial + nimaga (kategoriya, izoh)
+  // Chiqim — filial kesmida: Kategoriya × Filial (pivot)
+  if(agg.chiqFil && agg.chiqFil.length){
+    const filList = agg.chiqFil.map(f=>f.filial);
+    const m = {}; agg.chiqFil.forEach(f=>f.cats.forEach(c=>{ (m[c.n]=m[c.n]||{})[f.filial]=(m[c.n][f.filial]||0)+c.v; }));
+    const catList = Object.keys(m).sort((a,b)=>{
+      const sa=Object.values(m[a]).reduce((s,x)=>s+x,0), sb=Object.values(m[b]).reduce((s,x)=>s+x,0); return sb-sa;
+    });
+    const piv = [["Kategoriya", ...filList, "JAMI"]];
+    const colTot = filList.map(()=>0); let grand=0;
+    catList.forEach(cat=>{
+      let rt=0; const row=[cat];
+      filList.forEach((fl,i)=>{ const v=m[cat][fl]||0; row.push(v?R(v):null); rt+=v; colTot[i]+=v; });
+      row.push(R(rt)); grand+=rt; piv.push(row);
+    });
+    piv.push(["JAMI", ...colTot.map(R), R(grand)]);
+    const wsP = XLSX.utils.aoa_to_sheet(piv);
+    wsP["!cols"] = [{wch:24}, ...filList.map(()=>({wch:12})), {wch:13}];
+    XLSX.utils.book_append_sheet(wb, wsP, "Chiqim Filial×Kat");
+  }
+  // Chiqim — batafsil, FILIAL bo'yicha tartiblangan (qaysi filial + nimaga)
+  const FORD = Object.values(LB);
+  const xSorted = [...agg.xRows].sort((a,b)=>{
+    const fa=String(a.flabel||a.filial||"—"), fb=String(b.flabel||b.filial||"—");
+    const ia=FORD.indexOf(fa), ib=FORD.indexOf(fb);
+    if(ia!==ib) return (ia<0?99:ia)-(ib<0?99:ib);
+    return (b.usd||0)-(a.usd||0);
+  });
   const xc = [["Sana","Filial","Kategoriya","Izoh (nimaga)","Tip","Valyuta","Kurs","Summa","Summa $"]];
-  agg.xRows.forEach(r=>xc.push([r.dayLabel||"", r.flabel||r.filial||"", r.cat||"", r.desc||"", r.typ||"", r.cur||"", R(r.rate||0), r.sum||0, R(r.usd||0)]));
+  xSorted.forEach(r=>xc.push([r.dayLabel||"", r.flabel||r.filial||"", r.cat||"", r.desc||"", r.typ||"", r.cur||"", R(r.rate||0), r.sum||0, R(r.usd||0)]));
   const wsX = XLSX.utils.aoa_to_sheet(xc); wsX["!cols"]=[{wch:11},{wch:13},{wch:22},{wch:32},{wch:12},{wch:8},{wch:10},{wch:13},{wch:12}];
   XLSX.utils.book_append_sheet(wb, wsX, "Chiqim");
   // Kirim
