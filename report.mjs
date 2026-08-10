@@ -10,8 +10,8 @@ import * as XLSX from "xlsx";
 // ─── Sozlamalar (env orqali, aks holda standart qiymatlar) ──────────────────
 const XARAJAT_ID = process.env.XARAJAT_SHEET_ID || "109Zb2H6Ba29q7vOU5cM5hmJ6N1e9HyyaPyRBJDBYlN0";
 const PRIXOD_ID  = process.env.PRIXOD_SHEET_ID  || "1VUfzI8k0i9KfuZNmdEda49v8n20oWMWnme5w7QjnwC4";
-const BOT_TOKEN  = process.env.8618336444:AAGDvr8lFjzARSzJnIwwTngTRbCa1Z0OeNI;
-const CHAT_ID    = process.env.-1003820971069;
+const BOT_TOKEN  = process.env.TELEGRAM_BOT_TOKEN  ||"8618336444:AAGDvr8lFjzARSzJnIwwTngTRbCa1Z0OeNI";
+const CHAT_ID    = process.env.TELEGRAM_CHAT_ID  ||"-1003820971069";
 // Ixtiyoriy: aynan bir sanani sinash uchun (masalan "2026-08-07"). Bo'sh bo'lsa — bugun.
 const FORCE_DATE = process.env.REPORT_DATE || "";
 
