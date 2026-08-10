@@ -258,6 +258,31 @@ const PORT          = process.env.PORT || 3000;
 const f2  = n => "$" + Math.round(n||0).toLocaleString("en-US");
 const esc = s => String(s??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
 const sleep = ms => new Promise(r=>setTimeout(r,ms));
+const fnum = n => Math.round(n||0).toLocaleString("en").replace(/,/g," ");
+
+// ─── Kassa Ostatka (barcha davr, Kirim − Chiqim, filial × to'lov turi, so'm/USD) ──
+function isUsdCur(cur){ const s=String(cur||"").toLowerCase(); return s.includes("usd")||s.includes("$")||s.includes("долл")||s.includes("dollar"); }
+function normTyp(t){
+  const s=String(t||"").toLowerCase().trim();
+  if(!s) return "Boshqa";
+  if(s.includes("нал")||s.includes("naqd")||s.includes("накд")||s.includes("cash")||/(^|\W)nal(\W|$)/.test(s)) return "Naqd";
+  if(s.includes("карт")||s.includes("karta")||s.includes("card")||s.includes("пласт")||s.includes("plast")) return "Karta";
+  if(s.includes("перечисл")||s.includes("o'tkazma")||s.includes("otkazma")||s.includes("transfer")||s.includes("банк")||s.includes("bank")||s.includes("счет")||s.includes("schyot")||s.includes("счёт")) return "Perechisleniye";
+  return String(t).trim();
+}
+function computeKassa(prixod, xarajat){
+  const acc={}, typSet=new Set();
+  const add=(rows,sign)=>{ for(const r of (rows||[])){ const amt=(r.sum||0)*sign; const usd=isUsdCur(r.cur); const fl=r.flabel||r.filial||"?"; const typ=normTyp(r.typ); typSet.add(typ); if(!acc[fl])acc[fl]={}; if(!acc[fl][typ])acc[fl][typ]={som:0,usd:0}; if(usd)acc[fl][typ].usd+=amt; else acc[fl][typ].som+=amt; } };
+  add(prixod,+1); add(xarajat,-1);
+  const order=["Naqd","Karta","Perechisleniye"];
+  const typs=[...typSet].sort((a,b)=>{ const ia=order.indexOf(a),ib=order.indexOf(b); if(ia>=0&&ib>=0)return ia-ib; if(ia>=0)return -1; if(ib>=0)return 1; return a.localeCompare(b); });
+  const allFl=new Set(Object.keys(acc)); const filLabels=[];
+  for(const n of SH){ const lb=LB[n]; if(allFl.has(lb)){ filLabels.push(lb); allFl.delete(lb); } }
+  for(const fl of allFl) filLabels.push(fl);
+  const filTot={}, typTot={}, grand={som:0,usd:0};
+  for(const fl of filLabels){ filTot[fl]={som:0,usd:0}; for(const t of typs){ const c=acc[fl]?.[t]||{som:0,usd:0}; filTot[fl].som+=c.som; filTot[fl].usd+=c.usd; if(!typTot[t])typTot[t]={som:0,usd:0}; typTot[t].som+=c.som; typTot[t].usd+=c.usd; grand.som+=c.som; grand.usd+=c.usd; } }
+  return { typs, filLabels, acc, filTot, typTot, grand };
+}
 
 // Sana (Toshkent): which = 'kecha' | 'bugun'
 function dayKeyLabel(which){
@@ -287,7 +312,7 @@ function aggregate(prixod, xarajat, dayKey){
 }
 
 // ─── Hisobot HTML (rasmga aylantiriladi) ────────────────────────────────────
-function reportHTML(agg, dateLabel, genTime, which){
+function reportHTML(agg, dateLabel, genTime, which, kassa){
   const { kirim, chiqim, net, fils, chiqFil, kRows, xRows } = agg;
   const tile=(l,v,clr,bg,bd,ic)=>`<div style="background:${bg};border:1px solid ${bd};border-radius:14px;padding:14px 16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:11px;font-weight:800;color:${clr};letter-spacing:.4px">${l}</span><span style="font-size:18px">${ic}</span></div>
@@ -309,6 +334,20 @@ function reportHTML(agg, dateLabel, genTime, which){
           <span style="color:#475569;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(c.n)}</span>
           <span style="font-weight:700;color:#b91c1c;white-space:nowrap">${f2(c.v)}</span></div>`).join("")}
       </div></div>`).join("")}
+    </div>` : "";
+  const kassaBlock = (kassa && kassa.typs.length) ? `
+    <div style="font-size:13px;font-weight:800;color:#0f172a;margin:14px 0 8px 2px">💰 Kassa Ostatka — to'lov turi bo'yicha <span style="font-weight:600;color:#94a3b8;font-size:11px">(jami · Kirim − Chiqim)</span></div>
+    <div style="display:grid;grid-template-columns:repeat(${Math.min(4, kassa.typs.length+1)},1fr);gap:10px;margin-bottom:8px">
+    ${kassa.typs.map(t=>{const c=kassa.typTot[t]||{som:0,usd:0};return `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:11px;padding:10px 12px">
+        <div style="font-size:11px;font-weight:700;color:#64748b;margin-bottom:4px">${esc(t)}</div>
+        <div style="font-size:15px;font-weight:800;color:${c.som<0?"#dc2626":"#0f172a"}">${fnum(c.som)} <span style="font-size:10px;color:#94a3b8;font-weight:600">so'm</span></div>
+        ${c.usd?`<div style="font-size:12px;font-weight:700;color:${c.usd<0?"#dc2626":"#15803d"};margin-top:2px">${fnum(c.usd)} <span style="font-size:9px;color:#94a3b8">$</span></div>`:""}
+      </div>`;}).join("")}
+      <div style="background:linear-gradient(145deg,#f5f3ff,#ede9fe);border:1px solid #c4b5fd;border-radius:11px;padding:10px 12px">
+        <div style="font-size:11px;font-weight:800;color:#6d28d9;margin-bottom:4px">JAMI</div>
+        <div style="font-size:15px;font-weight:800;color:${kassa.grand.som<0?"#dc2626":"#6d28d9"}">${fnum(kassa.grand.som)} <span style="font-size:10px;color:#a78bfa;font-weight:600">so'm</span></div>
+        <div style="font-size:12px;font-weight:700;color:${kassa.grand.usd<0?"#dc2626":"#15803d"};margin-top:2px">${fnum(kassa.grand.usd)} <span style="font-size:9px;color:#a78bfa">$</span></div>
+      </div>
     </div>` : "";
   return `<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box;margin:0;padding:0;font-family:system-ui,-apple-system,'Segoe UI',Roboto,Arial,sans-serif}</style></head>
   <body style="background:#eef2f7;padding:20px"><div id="card" style="width:680px;background:#fff;border-radius:16px;padding:24px 26px;color:#0f172a;box-shadow:0 10px 40px rgba(15,23,42,.12)">
@@ -335,13 +374,14 @@ function reportHTML(agg, dateLabel, genTime, which){
         <td style="padding:9px 12px;text-align:right;color:#dc2626">${f2(chiqim)}</td>
         <td style="padding:9px 12px;text-align:right;color:${net>=0?"#0369a1":"#b45309"}">${f2(net)}</td></tr></tfoot></table>
     ${chiqBlock}
+    ${kassaBlock}
     <div style="margin-top:14px;padding-top:10px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;font-size:10.5px;color:#94a3b8">
       <span>📈 Baza — moliyaviy hisobot</span><span>Yaratildi: ${dateLabel} ${genTime}</span></div>
   </div></body></html>`;
 }
 
 // ─── Excel (Umumiy + Chiqim Filial×Kat + Chiqim + Kirim) ────────────────────
-function buildExcel(agg, dateLabel){
+function buildExcel(agg, dateLabel, kassa){
   const R=Math.round; const wb=XLSX.utils.book_new();
   const u=[["KUNLIK HISOBOT",dateLabel],[],["","$"],["Kirim",R(agg.kirim)],["Chiqim",R(agg.chiqim)],["Sof (ostatka)",R(agg.net)],[],["Filial","Kirim $","Chiqim $","Ostatka $"]];
   agg.fils.forEach(f=>u.push([f.filial,R(f.kirim),R(f.chiqim),R(f.net)]));
@@ -370,6 +410,19 @@ function buildExcel(agg, dateLabel){
   agg.kRows.forEach(r=>kc.push([r.dayLabel||"",r.flabel||r.filial||"",r.client||r.fio||"",r.manager||"",r.typ||"",r.cat||"",r.desc||"",r.cur||"",R(r.rate||0),r.sum||0,R(r.usd||0)]));
   const wsK=XLSX.utils.aoa_to_sheet(kc); wsK["!cols"]=[{wch:11},{wch:13},{wch:20},{wch:16},{wch:12},{wch:18},{wch:28},{wch:8},{wch:10},{wch:13},{wch:12}];
   XLSX.utils.book_append_sheet(wb,wsK,"Kirim");
+  // Kassa Ostatka — filial × to'lov turi (so'm/USD), barcha davr
+  if(kassa && kassa.filLabels.length){
+    const h1=["Filial"], h2=[""];
+    for(const t of kassa.typs){ h1.push(t,""); h2.push("SUM (so'm)","USD"); }
+    h1.push("JAMI",""); h2.push("SUM (so'm)","USD");
+    const ka=[h1,h2];
+    for(const fl of kassa.filLabels){ const row=[fl]; for(const t of kassa.typs){ const c=kassa.acc[fl]?.[t]||{som:0,usd:0}; row.push(R(c.som||0),R(c.usd||0)); } row.push(R(kassa.filTot[fl].som||0),R(kassa.filTot[fl].usd||0)); ka.push(row); }
+    const jr=["JAMI"]; for(const t of kassa.typs){ const c=kassa.typTot[t]||{som:0,usd:0}; jr.push(R(c.som||0),R(c.usd||0)); } jr.push(R(kassa.grand.som||0),R(kassa.grand.usd||0)); ka.push(jr);
+    const wsKa=XLSX.utils.aoa_to_sheet(ka);
+    const merges=[]; let col=1; for(let k=0;k<kassa.typs.length;k++){ merges.push({s:{r:0,c:col},e:{r:0,c:col+1}}); col+=2; } merges.push({s:{r:0,c:col},e:{r:0,c:col+1}}); merges.push({s:{r:0,c:0},e:{r:1,c:0}});
+    wsKa["!merges"]=merges; wsKa["!cols"]=[{wch:16},...Array((kassa.typs.length+1)*2).fill({wch:14})];
+    XLSX.utils.book_append_sheet(wb,wsKa,"Kassa Ostatka");
+  }
   return XLSX.write(wb,{type:"buffer",bookType:"xlsx"});
 }
 
@@ -416,10 +469,11 @@ async function sendReport(chatId, which){
   const { prixod, xarajat } = await getData();
   const agg = aggregate(prixod, xarajat, key);
   if(!agg.kRows.length && !agg.xRows.length){ await tgSendMessage(chatId, `📭 <b>${label}</b> uchun ma'lumot yo'q`); return; }
-  const png = await renderImage(reportHTML(agg, label, hm, which));
+  const kassa = computeKassa(prixod, xarajat);  // barcha davr Kassa Ostatka
+  const png = await renderImage(reportHTML(agg, label, hm, which, kassa));
   await sendPhoto(chatId, png, capMsg(agg, label, which));
-  const xls = buildExcel(agg, label);
-  await sendDoc(chatId, xls, `Kunlik_hisobot_${key}.xlsx`, "📎 Excel — filial va xarajatlar tafsiloti");
+  const xls = buildExcel(agg, label, kassa);
+  await sendDoc(chatId, xls, `Kunlik_hisobot_${key}.xlsx`, "📎 Excel — filial, xarajat va Kassa Ostatka");
 }
 
 // ─── /hisobot ni tinglash (long polling) ────────────────────────────────────
