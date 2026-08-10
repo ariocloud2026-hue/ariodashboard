@@ -836,9 +836,12 @@ function TodayCard({ prixod, xarajat }){
       setTgBusy(true); setTgMsg({ok:true, text:"Rasm tayyorlanmoqda…"});
       await paint(agg);
       const blob = await captureToBlob(reportRef.current, 2);
-      setTgMsg({ok:true, text:"Yuborilmoqda…"});
+      setTgMsg({ok:true, text:"Rasm yuborilmoqda…"});
       await sendPhotoToTelegram(blob, capMsg(agg, which), tgTok.trim(), tgChat.trim());
-      setTgMsg({ok:true, text:"✅ Yuborildi — "+agg.label});
+      setTgMsg({ok:true, text:"Excel yuborilmoqda…"});
+      const xls = aggToXlsxBlob(agg);
+      await sendDocumentToTelegram(xls, "Kunlik_hisobot_"+agg.key+".xlsx", "📎 Excel — filial va xarajatlar tafsiloti", tgTok.trim(), tgChat.trim());
+      setTgMsg({ok:true, text:"✅ Rasm + Excel yuborildi — "+agg.label});
     }catch(e){ setTgMsg({ok:false, text:"❌ "+e.message}); }
     finally{ setTgBusy(false); }
   }
@@ -846,7 +849,7 @@ function TodayCard({ prixod, xarajat }){
   // /hisobot buyrug'iga javob — faqat shu sahifa ochiq turganda ishlaydi
   async function replyReport(which, chatId){
     const agg = which==="kecha" ? aggFor(yKey, yLabel) : todayAgg;
-    try{ await paint(agg); const blob = await captureToBlob(reportRef.current, 2); await sendPhotoToTelegram(blob, capMsg(agg, which), tgTok.trim(), chatId); }catch(e){}
+    try{ await paint(agg); const blob = await captureToBlob(reportRef.current, 2); await sendPhotoToTelegram(blob, capMsg(agg, which), tgTok.trim(), chatId); const xls = aggToXlsxBlob(agg); await sendDocumentToTelegram(xls, "Kunlik_hisobot_"+agg.key+".xlsx", "📎 Excel — filial va xarajatlar tafsiloti", tgTok.trim(), chatId); }catch(e){}
   }
   async function pollOnce(){
     if(!listenRef.current || !tgTok.trim()) return;
@@ -1287,6 +1290,44 @@ async function sendPhotoToTelegram(blob, caption, token, chatId){
   let j = {}; try{ j = await res.json(); }catch(e){}
   if(!res.ok || !j.ok) throw new Error(j.description || ("Telegram xatosi: HTTP " + res.status));
   return j;
+}
+
+// Telegramga hujjat (Excel) yuborish
+async function sendDocumentToTelegram(blob, filename, caption, token, chatId){
+  if(!token)  throw new Error("Bot tokeni kiritilmagan");
+  if(!chatId) throw new Error("Guruh chat_id kiritilmagan");
+  const fd = new FormData();
+  fd.append("chat_id", String(chatId).trim());
+  if(caption){ fd.append("caption", caption); fd.append("parse_mode", "HTML"); }
+  fd.append("document", blob, filename || "hisobot.xlsx");
+  const res = await fetch("https://api.telegram.org/bot" + String(token).trim() + "/sendDocument", { method:"POST", body: fd });
+  let j = {}; try{ j = await res.json(); }catch(e){}
+  if(!res.ok || !j.ok) throw new Error(j.description || ("Telegram xatosi: HTTP " + res.status));
+  return j;
+}
+
+// Kunlik hisobot Excel (Umumiy + Chiqim + Kirim) → Blob. Chiqimda: qaysi filial, nimaga (kategoriya+izoh)
+function aggToXlsxBlob(agg){
+  const R = Math.round;
+  const wb = XLSX.utils.book_new();
+  // Umumiy
+  const u = [["KUNLIK HISOBOT", agg.label],[],["","$"],["Kirim",R(agg.kirim)],["Chiqim",R(agg.chiqim)],["Sof (ostatka)",R(agg.net)],[],["Filial","Kirim $","Chiqim $","Ostatka $"]];
+  agg.fils.forEach(f=>u.push([f.filial,R(f.kirim),R(f.chiqim),R(f.net)]));
+  u.push(["JAMI",R(agg.kirim),R(agg.chiqim),R(agg.net)]);
+  const wsU = XLSX.utils.aoa_to_sheet(u); wsU["!cols"]=[{wch:22},{wch:14},{wch:14},{wch:14}];
+  XLSX.utils.book_append_sheet(wb, wsU, "Umumiy");
+  // Chiqim — qaysi filial + nimaga (kategoriya, izoh)
+  const xc = [["Sana","Filial","Kategoriya","Izoh (nimaga)","Tip","Valyuta","Kurs","Summa","Summa $"]];
+  agg.xRows.forEach(r=>xc.push([r.dayLabel||"", r.flabel||r.filial||"", r.cat||"", r.desc||"", r.typ||"", r.cur||"", R(r.rate||0), r.sum||0, R(r.usd||0)]));
+  const wsX = XLSX.utils.aoa_to_sheet(xc); wsX["!cols"]=[{wch:11},{wch:13},{wch:22},{wch:32},{wch:12},{wch:8},{wch:10},{wch:13},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, wsX, "Chiqim");
+  // Kirim
+  const kc = [["Sana","Filial","Klient / FIO","Menejer","Tip","Kategoriya","Izoh","Valyuta","Kurs","Summa","Summa $"]];
+  agg.kRows.forEach(r=>kc.push([r.dayLabel||"", r.flabel||r.filial||"", r.client||r.fio||"", r.manager||"", r.typ||"", r.cat||"", r.desc||"", r.cur||"", R(r.rate||0), r.sum||0, R(r.usd||0)]));
+  const wsK = XLSX.utils.aoa_to_sheet(kc); wsK["!cols"]=[{wch:11},{wch:13},{wch:20},{wch:16},{wch:12},{wch:18},{wch:28},{wch:8},{wch:10},{wch:13},{wch:12}];
+  XLSX.utils.book_append_sheet(wb, wsK, "Kirim");
+  const buf = XLSX.write(wb, { type:"array", bookType:"xlsx" });
+  return new Blob([buf], { type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
 }
 
 /* ─── Dashboard Excel export (pivot format + raw data) ──────────────────── */
