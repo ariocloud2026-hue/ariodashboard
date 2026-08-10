@@ -1,0 +1,15 @@
+{
+  "name": "hisobot-telegram-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Doim ishlaydigan Telegram bot: /hisobot → rasm + Excel, va har kuni 09:00 avtomatik",
+  "scripts": {
+    "start": "node bot.mjs"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "puppeteer": "^23.11.1",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
+  }
+}
