@@ -797,22 +797,79 @@ function TodayCard({ prixod, xarajat }){
   // Chiqim — kategoriyalar (top)
   const _catMap = {}; xRows.forEach(r=>{ const c=String(r.cat||"—").trim()||"—"; _catMap[c]=(_catMap[c]||0)+(r.usd||0); });
   const topCats = Object.entries(_catMap).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8);
-  const genTime = `${label} ${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
-  const sendTg = async () => {
+  // ── Hisobot: sana bo'yicha yig'ish (bugun/kecha) ──
+  function aggFor(dayKey, dayLabel){
+    const kk = (prixod||[]).filter(r=>r.day===dayKey).map(r=>({...r,_t:"Kirim"}));
+    const xx = (xarajat||[]).filter(r=>r.day===dayKey).map(r=>({...r,_t:"Chiqim"}));
+    const ki = kk.reduce((s,r)=>s+(r.usd||0),0), ch = xx.reduce((s,r)=>s+(r.usd||0),0);
+    const fm = {}; const bp=(arr,key)=>arr.forEach(r=>{ const f=String(r.flabel||r.filial||"—").trim()||"—"; if(!fm[f])fm[f]={filial:f,kirim:0,chiqim:0}; fm[f][key]+=r.usd||0; });
+    bp(kk,"kirim"); bp(xx,"chiqim");
+    const fl = Object.values(fm).map(o=>({...o,net:o.kirim-o.chiqim})).sort((a,b)=>b.kirim-a.kirim);
+    const cm={}; xx.forEach(r=>{ const c=String(r.cat||"—").trim()||"—"; cm[c]=(cm[c]||0)+(r.usd||0); });
+    const tc=Object.entries(cm).map(([n,v])=>({n,v})).sort((a,b)=>b.v-a.v).slice(0,8);
+    return { key:dayKey, label:dayLabel, kirim:ki, chiqim:ch, net:ki-ch, fils:fl, topCats:tc, kRows:kk, xRows:xx };
+  }
+  const todayAgg = { key:today, label, kirim, chiqim, net, fils, topCats, kRows, xRows };
+  const yt = new Date(t); yt.setDate(yt.getDate()-1);
+  const yKey = `${yt.getFullYear()}-${pad2(yt.getMonth()+1)}-${pad2(yt.getDate())}`;
+  const yLabel = `${pad2(yt.getDate())}.${pad2(yt.getMonth()+1)}.${yt.getFullYear()}`;
+  const genTime = `${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
+
+  const [repData, setRepData] = useState(null);
+  const RD = repData || todayAgg;                    // rasm bloki shu ma'lumotdan chiziladi
+  const offsetRef = useRef(0);
+  const listenRef = useRef(false);
+  const [tgListen, setTgListen] = useState(false);
+
+  const capMsg = (agg, tag) => "📊 <b>Kunlik hisobot</b>" + (tag?" ("+tag+")":"") + " — " + agg.label
+    + "\n📥 Kirim: " + f2(agg.kirim) + "   📤 Chiqim: " + f2(agg.chiqim) + "   💰 Sof: " + f2(agg.net);
+
+  async function paint(agg){ setRepData(agg); await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))); }
+
+  // Qo'lda yuborish (Bugun / Kecha tugmasi)
+  async function sendForDate(which){
     setTgMsg(null);
-    if(!kRows.length && !xRows.length){ setTgMsg({ok:false, text:"Bugun uchun ma'lumot yo'q"}); return; }
     if(!tgTok.trim() || !tgChat.trim()){ setTgCfg(true); setTgMsg({ok:false, text:"Avval bot tokeni va guruh chat_id ni kiriting"}); return; }
+    const agg = which==="kecha" ? aggFor(yKey, yLabel) : todayAgg;
+    if(!agg.kRows.length && !agg.xRows.length){ setTgMsg({ok:false, text:(which==="kecha"?"Kecha":"Bugun")+" uchun ma'lumot yo'q"}); return; }
     try{
       setTgBusy(true); setTgMsg({ok:true, text:"Rasm tayyorlanmoqda…"});
+      await paint(agg);
       const blob = await captureToBlob(reportRef.current, 2);
       setTgMsg({ok:true, text:"Yuborilmoqda…"});
-      const caption = "📊 <b>Kunlik hisobot</b> — " + label
-        + "\n📥 Kirim: " + f2(kirim) + "   📤 Chiqim: " + f2(chiqim) + "   💰 Sof: " + f2(net);
-      await sendPhotoToTelegram(blob, caption, tgTok, tgChat);
-      setTgMsg({ok:true, text:"✅ Guruhga yuborildi!"});
-    }catch(e){ setTgMsg({ok:false, text:"❌ " + e.message}); }
+      await sendPhotoToTelegram(blob, capMsg(agg, which), tgTok.trim(), tgChat.trim());
+      setTgMsg({ok:true, text:"✅ Yuborildi — "+agg.label});
+    }catch(e){ setTgMsg({ok:false, text:"❌ "+e.message}); }
     finally{ setTgBusy(false); }
-  };
+  }
+
+  // /hisobot buyrug'iga javob — faqat shu sahifa ochiq turganda ishlaydi
+  async function replyReport(which, chatId){
+    const agg = which==="kecha" ? aggFor(yKey, yLabel) : todayAgg;
+    try{ await paint(agg); const blob = await captureToBlob(reportRef.current, 2); await sendPhotoToTelegram(blob, capMsg(agg, which), tgTok.trim(), chatId); }catch(e){}
+  }
+  async function pollOnce(){
+    if(!listenRef.current || !tgTok.trim()) return;
+    try{
+      const r = await fetch("https://api.telegram.org/bot"+tgTok.trim()+"/getUpdates?timeout=0&offset="+offsetRef.current);
+      const j = await r.json();
+      if(j.ok) for(const u of j.result){
+        offsetRef.current = u.update_id + 1;
+        const m = u.message || u.channel_post; if(!m || !m.text) continue;
+        const txt = m.text.trim().toLowerCase().replace(/@[a-z0-9_]+/g,"").trim();
+        if(txt==="/hisobot" || txt==="hisobot") await replyReport("kecha", m.chat.id);
+        else if(txt==="/hisobot bugun" || txt==="hisobot bugun") await replyReport("bugun", m.chat.id);
+      }
+    }catch(e){}
+  }
+  useEffect(()=>{
+    listenRef.current = tgListen;
+    if(!tgListen || !tgTok.trim()) return;
+    // eski xabarlarni o'tkazib, faqat yangi /hisobot larga javob beramiz
+    (async()=>{ try{ const r=await fetch("https://api.telegram.org/bot"+tgTok.trim()+"/getUpdates?timeout=0&offset=-1"); const j=await r.json(); if(j.ok&&j.result.length) offsetRef.current=j.result[j.result.length-1].update_id+1; }catch(e){} })();
+    const id = setInterval(pollOnce, 3500);
+    return ()=>clearInterval(id);
+  }, [tgListen, tgTok]);
 
   const exportFil = () => {
     try{
@@ -851,9 +908,18 @@ function TodayCard({ prixod, xarajat }){
           <div style={{flex:1,minWidth:8}}/>
           <button onClick={()=>setTgCfg(v=>!v)}
             style={{display:"inline-flex",alignItems:"center",gap:5,padding:"6px 11px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid #e2e8f0",background:"#f8fafc",color:"#475569",cursor:"pointer",whiteSpace:"nowrap"}}>🔧 Sozlash</button>
-          <button onClick={sendTg} disabled={tgBusy}
+          <button onClick={()=>sendForDate("kecha")} disabled={tgBusy}
+            style={{display:"inline-flex",alignItems:"center",gap:5,padding:"6px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid "+(tgBusy?"#e2e8f0":"#c4b5fd"),background:tgBusy?"#f1f5f9":"linear-gradient(135deg,#8b5cf6,#7c3aed)",color:tgBusy?"#94a3b8":"#fff",cursor:tgBusy?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
+            📤 Kecha</button>
+          <button onClick={()=>sendForDate("bugun")} disabled={tgBusy}
             style={{display:"inline-flex",alignItems:"center",gap:5,padding:"6px 13px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid "+(tgBusy?"#e2e8f0":"#93c5fd"),background:tgBusy?"#f1f5f9":"linear-gradient(135deg,#3b82f6,#2563eb)",color:tgBusy?"#94a3b8":"#fff",cursor:tgBusy?"not-allowed":"pointer",whiteSpace:"nowrap"}}>
-            {tgBusy?"⏳ Yuborilmoqda…":"📤 Guruhga yuborish"}</button>
+            {tgBusy?"⏳ …":"📤 Bugun"}</button>
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginTop:9,flexWrap:"wrap"}}>
+          <button onClick={()=>{ if(!tgTok.trim()){ setTgCfg(true); setTgMsg({ok:false,text:"Avval bot tokenini kiriting"}); return;} setTgListen(v=>!v); }}
+            style={{display:"inline-flex",alignItems:"center",gap:6,padding:"6px 12px",fontSize:11.5,fontWeight:700,borderRadius:8,border:"1px solid "+(tgListen?"#6ee7b7":"#e2e8f0"),background:tgListen?"#ecfdf5":"#f8fafc",color:tgListen?"#047857":"#475569",cursor:"pointer"}}>
+            {tgListen ? "🟢 /hisobot tinglanmoqda — to'xtatish" : "🤖 /hisobot buyrug'ini tinglash"}</button>
+          <span style={{fontSize:10.5,color:"#94a3b8"}}>Guruhda <b>/hisobot</b> → kecha · <b>/hisobot bugun</b> → bugun</span>
         </div>
         {tgMsg && <div style={{marginTop:8,fontSize:12,fontWeight:600,color:tgMsg.ok?"#15803d":"#dc2626"}}>{tgMsg.text}</div>}
         {tgCfg && (
@@ -962,18 +1028,18 @@ function TodayCard({ prixod, xarajat }){
         <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",borderBottom:"3px solid #2563eb",paddingBottom:12,marginBottom:16}}>
           <div>
             <div style={{fontSize:22,fontWeight:800,letterSpacing:"-0.02em"}}>📊 Kunlik moliyaviy hisobot</div>
-            <div style={{fontSize:13,color:"#64748b",marginTop:2}}>Barcha filiallar bo'yicha</div>
+            <div style={{fontSize:13,color:"#64748b",marginTop:2}}>Kunlik yakun · barcha filiallar</div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div style={{fontSize:20,fontWeight:800,color:"#2563eb"}}>{label}</div>
-            <div style={{fontSize:11,color:"#94a3b8"}}>{(kRows.length+xRows.length)+" yozuv"}</div>
+            <div style={{fontSize:20,fontWeight:800,color:"#2563eb"}}>{RD.label}</div>
+            <div style={{fontSize:11,color:"#94a3b8"}}>{(RD.kRows.length+RD.xRows.length)+" yozuv"}</div>
           </div>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:18}}>
           {[
-            {l:"KIRIM",v:f2(kirim),clr:"#059669",bg:"#ecfdf5",bd:"#a7f3d0",ic:"📥"},
-            {l:"CHIQIM",v:f2(chiqim),clr:"#dc2626",bg:"#fef2f2",bd:"#fecaca",ic:"📤"},
-            {l:"SOF (OSTATKA)",v:f2(net),clr:net>=0?"#0369a1":"#b45309",bg:net>=0?"#eff6ff":"#fffbeb",bd:net>=0?"#bfdbfe":"#fde68a",ic:net>=0?"💰":"⚠️"},
+            {l:"KIRIM",v:f2(RD.kirim),clr:"#059669",bg:"#ecfdf5",bd:"#a7f3d0",ic:"📥"},
+            {l:"CHIQIM",v:f2(RD.chiqim),clr:"#dc2626",bg:"#fef2f2",bd:"#fecaca",ic:"📤"},
+            {l:"SOF (OSTATKA)",v:f2(RD.net),clr:RD.net>=0?"#0369a1":"#b45309",bg:RD.net>=0?"#eff6ff":"#fffbeb",bd:RD.net>=0?"#bfdbfe":"#fde68a",ic:RD.net>=0?"💰":"⚠️"},
           ].map((c,i)=>(
             <div key={i} style={{background:c.bg,border:"1px solid "+c.bd,borderRadius:14,padding:"14px 16px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
@@ -985,14 +1051,14 @@ function TodayCard({ prixod, xarajat }){
           ))}
         </div>
         <div style={{fontSize:13,fontWeight:800,color:"#0f172a",margin:"0 0 8px 2px"}}>🏢 Filiallar kesmida</div>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,marginBottom:topCats.length?18:6}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13,marginBottom:RD.topCats.length?18:6}}>
           <thead><tr style={{background:"#f1f5f9"}}>
             {["Filial","Kirim","Chiqim","Ostatka"].map((h,i)=>(
               <th key={i} style={{padding:"8px 12px",textAlign:i?"right":"left",fontSize:11,color:"#475569",fontWeight:700,letterSpacing:".3px",borderBottom:"2px solid #e2e8f0"}}>{h}</th>
             ))}
           </tr></thead>
           <tbody>
-            {fils.map((f,i)=>(
+            {RD.fils.map((f,i)=>(
               <tr key={i} style={{borderBottom:"1px solid #eef2f7"}}>
                 <td style={{padding:"8px 12px",fontWeight:700,color:"#1e293b"}}>{f.filial}</td>
                 <td style={{padding:"8px 12px",textAlign:"right",fontWeight:700,color:"#059669"}}>{f2(f.kirim)}</td>
@@ -1003,16 +1069,16 @@ function TodayCard({ prixod, xarajat }){
           </tbody>
           <tfoot><tr style={{background:"#f8fafc",fontWeight:800,borderTop:"2px solid #e2e8f0"}}>
             <td style={{padding:"9px 12px"}}>JAMI</td>
-            <td style={{padding:"9px 12px",textAlign:"right",color:"#059669"}}>{f2(kirim)}</td>
-            <td style={{padding:"9px 12px",textAlign:"right",color:"#dc2626"}}>{f2(chiqim)}</td>
-            <td style={{padding:"9px 12px",textAlign:"right",color:net>=0?"#0369a1":"#b45309"}}>{f2(net)}</td>
+            <td style={{padding:"9px 12px",textAlign:"right",color:"#059669"}}>{f2(RD.kirim)}</td>
+            <td style={{padding:"9px 12px",textAlign:"right",color:"#dc2626"}}>{f2(RD.chiqim)}</td>
+            <td style={{padding:"9px 12px",textAlign:"right",color:RD.net>=0?"#0369a1":"#b45309"}}>{f2(RD.net)}</td>
           </tr></tfoot>
         </table>
-        {topCats.length>0 && (
+        {RD.topCats.length>0 && (
           <React.Fragment>
-            <div style={{fontSize:13,fontWeight:800,color:"#0f172a",margin:"0 0 8px 2px"}}>{"📤 Chiqim — kategoriyalar (top " + topCats.length + ")"}</div>
+            <div style={{fontSize:13,fontWeight:800,color:"#0f172a",margin:"0 0 8px 2px"}}>{"📤 Chiqim — kategoriyalar (top " + RD.topCats.length + ")"}</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"4px 18px",marginBottom:8}}>
-              {topCats.map((c,i)=>(
+              {RD.topCats.map((c,i)=>(
                 <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12.5,padding:"5px 10px",background:i%2?"#fafafa":"#f8fafc",borderRadius:6}}>
                   <span style={{color:"#334155",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.n}</span>
                   <span style={{fontWeight:700,color:"#dc2626",whiteSpace:"nowrap"}}>{f2(c.v)}</span>
@@ -1023,7 +1089,7 @@ function TodayCard({ prixod, xarajat }){
         )}
         <div style={{marginTop:14,paddingTop:10,borderTop:"1px solid #e2e8f0",display:"flex",justifyContent:"space-between",fontSize:10.5,color:"#94a3b8"}}>
           <span>📈 Baza — moliyaviy hisobot</span>
-          <span>{"Yaratildi: " + genTime}</span>
+          <span>{"Yaratildi: " + RD.label + " " + genTime}</span>
         </div>
       </div>
     </div>
