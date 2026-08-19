@@ -502,17 +502,22 @@ async function poll(){
 
 // ─── Har kuni DAILY_TIME (Toshkent) da avtomatik ────────────────────────────
 let lastDaily="";
-setInterval(async ()=>{
+function dailyTick(){
   if(!DAILY_CHAT_ID) return;
   const now=tashkentNow();
-  const hm=`${pad2(now.getHours())}:${pad2(now.getMinutes())}`;
+  const parts=String(DAILY_TIME).split(":");
+  const H=parseInt(parts[0],10)||0, M=parseInt(parts[1],10)||0;
+  const targetMin=H*60+M;
+  const nowMin=now.getHours()*60+now.getMinutes();
   const dayStr=`${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
-  if(hm===DAILY_TIME && lastDaily!==dayStr){
+  // Belgilangan vaqtdan keyin, 3 soatlik oynada, kuniga bir marta (aniq daqiqa o'tib ketsa ham yuboradi)
+  if(nowMin>=targetMin && nowMin<targetMin+180 && lastDaily!==dayStr){
     lastDaily=dayStr;
-    console.log(`⏰ ${hm} — kunlik hisobot yuborilmoqda…`);
-    try{ await sendReport(DAILY_CHAT_ID,"kecha"); }catch(e){ console.error("daily:",e.message); }
+    console.log(`⏰ ${pad2(now.getHours())}:${pad2(now.getMinutes())} — kunlik hisobot yuborilmoqda → ${DAILY_CHAT_ID}`);
+    sendReport(DAILY_CHAT_ID,"kecha").catch(e=>console.error("daily xato:",e.message));
   }
-}, 30000);
+}
+setInterval(dailyTick, 60000);   // har daqiqa tekshiradi
 
 // ─── Health server (Railway/Render "Web Service" uchun port) ────────────────
 http.createServer((_,res)=>{ res.writeHead(200,{ "Content-Type":"text/plain" }); res.end("bot ishlayapti"); }).listen(PORT,()=>console.log("🌐 health:",PORT));
@@ -522,6 +527,9 @@ http.createServer((_,res)=>{ res.writeHead(200,{ "Content-Type":"text/plain" });
   if(!BOT_TOKEN){ console.error("❌ TELEGRAM_BOT_TOKEN yo'q"); process.exit(1); }
   // eski xabarlarni o'tkazib yuboramiz — faqat yangi /hisobot larga javob
   try{ const r=await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getUpdates?timeout=0&offset=-1`); const j=await r.json(); if(j.ok&&j.result.length) offset=j.result[j.result.length-1].update_id+1; }catch(e){}
-  console.log("🤖 Bot ishga tushdi. /hisobot ni kutmoqda…"+(DAILY_CHAT_ID?` (kunlik ${DAILY_TIME} → ${DAILY_CHAT_ID})`:""));
+  if(DAILY_CHAT_ID) console.log(`🗓️  Kunlik: har kuni ${DAILY_TIME} (Toshkent) → ${DAILY_CHAT_ID}`);
+  else console.warn("⚠️  DAILY_CHAT_ID yo'q — 9:00 avtomatik yuborish O'CHIQ. Guruh id (-100…) ni DAILY_CHAT_ID ga qo'ying.");
+  console.log("🤖 Bot ishga tushdi. /hisobot ni kutmoqda…");
+  dailyTick();   // startupda ham tekshiradi (missed bo'lsa yuboradi)
   poll();
 })();
