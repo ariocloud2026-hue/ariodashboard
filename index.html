@@ -1460,35 +1460,37 @@ function exportDashboardXlsx({ groupsArr, fils, cx, cT, fT, grand, filteredData,
   XLSX.writeFile(wb, safeName(filename) + ".xlsx");
 }
 
-/* ─── Kassa ostatka Excel export ────────────────────────────────────────── */
+/* ─── Kassa ostatka Excel export (Ostatka + Kirim + Chiqim) ─────────────── */
 function exportOstatkaXlsx(ost){
   if(!ost||!ost.filLabels.length) return;
-  const aoa=[];
-  const header1=["Filial"];
-  const header2=[""];
-  for(const t of ost.typs){ header1.push(t,""); header2.push("SUM","USD"); }
-  header1.push("JAMI",""); header2.push("SUM","USD");
-  aoa.push(header1); aoa.push(header2);
-  for(const fl of ost.filLabels){
-    const row=[fl];
-    for(const t of ost.typs){ const c=ost.acc[fl]?.[t]||{som:0,usd:0}; row.push(c.som||0, c.usd||0); }
-    row.push(ost.filTot[fl].som||0, ost.filTot[fl].usd||0);
-    aoa.push(row);
-  }
-  const jami=["JAMI"];
-  for(const t of ost.typs){ const c=ost.typTot[t]||{som:0,usd:0}; jami.push(c.som||0, c.usd||0); }
-  jami.push(ost.grand.som||0, ost.grand.usd||0);
-  aoa.push(jami);
-  const ws=XLSX.utils.aoa_to_sheet(aoa);
-  // Merge group headers (har tip 2 ustun)
-  const merges=[]; let col=1;
-  for(let k=0;k<ost.typs.length;k++){ merges.push({s:{r:0,c:col},e:{r:0,c:col+1}}); col+=2; }
-  merges.push({s:{r:0,c:col},e:{r:0,c:col+1}});
-  merges.push({s:{r:0,c:0},e:{r:1,c:0}});
-  ws["!merges"]=merges;
-  ws["!cols"]=[{wch:16},...Array((ost.typs.length+1)*2).fill({wch:14})];
   const wb=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Kassa Ostatka");
+  const mkSheet=(V, name)=>{
+    const aoa=[]; const header1=["Filial"], header2=[""];
+    for(const t of ost.typs){ header1.push(t,""); header2.push("SUM","USD"); }
+    header1.push("JAMI",""); header2.push("SUM","USD");
+    aoa.push(header1); aoa.push(header2);
+    for(const fl of ost.filLabels){
+      const row=[fl];
+      for(const t of ost.typs){ const c=V.acc[fl]?.[t]||{som:0,usd:0}; row.push(c.som||0, c.usd||0); }
+      row.push(V.filTot[fl].som||0, V.filTot[fl].usd||0);
+      aoa.push(row);
+    }
+    const jami=["JAMI"];
+    for(const t of ost.typs){ const c=V.typTot[t]||{som:0,usd:0}; jami.push(c.som||0, c.usd||0); }
+    jami.push(V.grand.som||0, V.grand.usd||0);
+    aoa.push(jami);
+    const ws=XLSX.utils.aoa_to_sheet(aoa);
+    const merges=[]; let col=1;
+    for(let k=0;k<ost.typs.length;k++){ merges.push({s:{r:0,c:col},e:{r:0,c:col+1}}); col+=2; }
+    merges.push({s:{r:0,c:col},e:{r:0,c:col+1}});
+    merges.push({s:{r:0,c:0},e:{r:1,c:0}});
+    ws["!merges"]=merges;
+    ws["!cols"]=[{wch:16},...Array((ost.typs.length+1)*2).fill({wch:14})];
+    XLSX.utils.book_append_sheet(wb, ws, name);
+  };
+  mkSheet(ost.ostatka, "Ostatka");
+  mkSheet(ost.kirim,   "Kirim");
+  mkSheet(ost.chiqim,  "Chiqim");
   XLSX.writeFile(wb, "Kassa_ostatka.xlsx");
 }
 
@@ -3345,25 +3347,28 @@ function normTyp(t){
   if(s.includes("перечисл")||s.includes("o'tkazma")||s.includes("otkazma")||s.includes("transfer")||s.includes("банк")||s.includes("bank")||s.includes("счет")||s.includes("schyot")||s.includes("счёт")) return "Perechisleniye";
   return String(t).trim();
 }
-// Kassa ostatka = Kirim(prixod) − Chiqim(rasxod), filial × tip oplata, Валюта bo'yicha SUM/USD
+// Kassa: Kirim(prixod), Chiqim(rasxod) va Ostatka(=Kirim−Chiqim), filial × tip oplata, so'm/USD
 function computeOstatka(prixod, xarajat){
-  const acc={}, typSet=new Set();
-  const head={som:0,usd:0};   // (ishlatilmaydi — moslik uchun)
-  const add=(rows, sign)=>{
-    for(const r of (rows||[])){
-      const amt=(r.sum||0)*sign;
-      const usd=isUsdCur(r.cur);
-      const fl=r.flabel||r.filial||"?";
-      const typ=normTyp(r.typ);
-      typSet.add(typ);
-      if(!acc[fl]) acc[fl]={};
-      if(!acc[fl][typ]) acc[fl][typ]={som:0,usd:0};
-      if(usd) acc[fl][typ].usd+=amt;
-      else    acc[fl][typ].som+=amt;
+  const buildAcc=(pairs)=>{
+    const acc={}, typSet=new Set();
+    for(const [rows,sign] of pairs){
+      for(const r of (rows||[])){
+        const amt=(r.sum||0)*sign;
+        const usd=isUsdCur(r.cur);
+        const fl=r.flabel||r.filial||"?";
+        const typ=normTyp(r.typ);
+        typSet.add(typ);
+        if(!acc[fl]) acc[fl]={};
+        if(!acc[fl][typ]) acc[fl][typ]={som:0,usd:0};
+        if(usd) acc[fl][typ].usd+=amt; else acc[fl][typ].som+=amt;
+      }
     }
+    return {acc, typSet};
   };
-  add(prixod,+1);
-  add(xarajat,-1);
+  const A_net    = buildAcc([[prixod,+1],[xarajat,-1]]);
+  const A_kirim  = buildAcc([[prixod,+1]]);
+  const A_chiqim = buildAcc([[xarajat,+1]]);
+  const typSet = new Set([...A_net.typSet, ...A_kirim.typSet, ...A_chiqim.typSet]);
   const order=["Naqd","Karta","Perechisleniye"];
   const typs=[...typSet].sort((a,b)=>{
     const ia=order.indexOf(a), ib=order.indexOf(b);
@@ -3372,34 +3377,44 @@ function computeOstatka(prixod, xarajat){
     return a.localeCompare(b);
   });
   // Filiallar SH tartibida, qolganlari oxirida
+  const allFl=new Set([...Object.keys(A_net.acc),...Object.keys(A_kirim.acc),...Object.keys(A_chiqim.acc)]);
   const filLabels=[];
-  for(const n of SH){ const lb=LB[n]; if(acc[lb]) filLabels.push(lb); }
-  for(const fl of Object.keys(acc)) if(!filLabels.includes(fl)) filLabels.push(fl);
-  // Jami (filial bo'yicha) + ustun jami + umumiy
-  const filTot={}, typTot={}, grand={som:0,usd:0};
-  for(const fl of filLabels){
-    filTot[fl]={som:0,usd:0};
-    for(const t of typs){
-      const c=acc[fl]?.[t]||{som:0,usd:0};
-      filTot[fl].som+=c.som; filTot[fl].usd+=c.usd;
-      if(!typTot[t]) typTot[t]={som:0,usd:0};
-      typTot[t].som+=c.som; typTot[t].usd+=c.usd;
-      grand.som+=c.som; grand.usd+=c.usd;
+  for(const n of SH){ const lb=LB[n]; if(allFl.has(lb)){ filLabels.push(lb); allFl.delete(lb); } }
+  for(const fl of allFl) filLabels.push(fl);
+  const finalize=(acc)=>{
+    const filTot={}, typTot={}, grand={som:0,usd:0};
+    for(const fl of filLabels){
+      filTot[fl]={som:0,usd:0};
+      for(const t of typs){
+        const c=acc[fl]?.[t]||{som:0,usd:0};
+        filTot[fl].som+=c.som; filTot[fl].usd+=c.usd;
+        if(!typTot[t]) typTot[t]={som:0,usd:0};
+        typTot[t].som+=c.som; typTot[t].usd+=c.usd;
+        grand.som+=c.som; grand.usd+=c.usd;
+      }
     }
-  }
-  return {acc, typs, filLabels, filTot, typTot, grand, head};
+    return { acc, filTot, typTot, grand };
+  };
+  const ostatka=finalize(A_net.acc), kirim=finalize(A_kirim.acc), chiqim=finalize(A_chiqim.acc);
+  const head={som:0,usd:0};
+  // compat: eski kod ost.acc/filTot/typTot/grand = Ostatka (net)
+  return { typs, filLabels, head, ostatka, kirim, chiqim,
+           acc:ostatka.acc, filTot:ostatka.filTot, typTot:ostatka.typTot, grand:ostatka.grand };
 }
 
 /* ─── Kassa Ostatka ko'rinishi (alohida bo'lim) ──────────────────────────── */
 function OstatkaView({ prixod, xarajat }){
   const ost = computeOstatka(prixod, xarajat);
   const [detail, setDetail] = useState(null); // bosilgan filial nomi
+  const [view, setView] = useState("ostatka"); // ostatka | kirim | chiqim
+  const V = ost[view] || ost.ostatka;
+  const VMETA = { ostatka:{t:"Ostatka", sub:"Kirim − Chiqim (prixod − rasxod)"}, kirim:{t:"Kirim", sub:"faqat kirim (prixod)"}, chiqim:{t:"Chiqim", sub:"faqat chiqim (rasxod)"} };
   const bdr="1px solid #e2e8f0";
   const th=(ex={})=>({padding:"8px 12px",fontSize:11,fontWeight:700,color:"#64748b",borderBottom:bdr,background:"#f8fafc",whiteSpace:"nowrap",...ex});
   const td=(ex={})=>({padding:"9px 12px",fontSize:12,...ex});
   const hasData = ost.filLabels.length>0;
 
-  // Bir filial uchun: to'lov turi × valyuta × kurs bo'yicha qolgan pul
+  // Bir filial uchun: to'lov turi × valyuta × kurs bo'yicha (tanlangan ko'rinish)
   function filialDetail(fl){
     const map={};
     const add=(rows,sign)=>{
@@ -3408,14 +3423,15 @@ function OstatkaView({ prixod, xarajat }){
         const typ=normTyp(r.typ);
         const usd=isUsdCur(r.cur);
         const rate=Math.round(r.rate||0);
-        // So'm — kurs bo'yicha bo'linmaydi (bitta qatorда jamlanadi); faqat USD kurs bo'yicha ajratiladi
         const key = usd ? (typ+'|U|'+rate) : (typ+'|S');
         if(!map[key]) map[key]={typ, usd, rate: usd?rate:0, som:0, val:0};
         const amt=(r.sum||0)*sign;
         if(usd) map[key].val+=amt; else map[key].som+=amt;
       }
     };
-    add(prixod,+1); add(xarajat,-1);
+    if(view==="kirim"){ add(prixod,+1); }
+    else if(view==="chiqim"){ add(xarajat,+1); }
+    else { add(prixod,+1); add(xarajat,-1); }
     return Object.values(map).filter(x=>Math.round(x.som)||Math.round(x.val))
       .sort((a,b)=> a.typ.localeCompare(b.typ) || a.usd-b.usd || a.rate-b.rate);
   }
@@ -3424,8 +3440,8 @@ function OstatkaView({ prixod, xarajat }){
     <div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:8,marginBottom:14}}>
         <div>
-          <div style={{fontSize:17,fontWeight:800,color:"#0f172a",letterSpacing:"-0.02em"}}>💰 Kassa Ostatka</div>
-          <div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>Filial × to'lov turi · Kirim − Chiqim (prixod − rasxod)</div>
+          <div style={{fontSize:17,fontWeight:800,color:"#0f172a",letterSpacing:"-0.02em"}}>💰 Kassa {VMETA[view].t}</div>
+          <div style={{fontSize:12,color:"#94a3b8",marginTop:2}}>Filial × to'lov turi · {VMETA[view].sub}</div>
         </div>
         {hasData&&(
           <button onClick={()=>exportOstatkaXlsx(ost)}
@@ -3435,6 +3451,40 @@ function OstatkaView({ prixod, xarajat }){
           </button>
         )}
       </div>
+
+      {hasData&&(
+        <>
+        {/* Ko'rinish almashtirgich */}
+        <div style={{display:"inline-flex",gap:4,background:"#f1f5f9",borderRadius:10,padding:4,marginBottom:12}}>
+          {[["ostatka","💰 Ostatka"],["kirim","📥 Kirim"],["chiqim","📤 Chiqim"]].map(([k,lbl])=>(
+            <button key={k} onClick={()=>setView(k)}
+              style={{padding:"6px 14px",fontSize:12,fontWeight:700,borderRadius:7,border:"none",cursor:"pointer",whiteSpace:"nowrap",
+                background: view===k ? "#fff" : "transparent",
+                color: view===k ? (k==="kirim"?"#059669":k==="chiqim"?"#dc2626":"#6d28d9") : "#64748b",
+                boxShadow: view===k ? "0 1px 3px rgba(0,0,0,0.1)" : "none"}}>{lbl}</button>
+          ))}
+        </div>
+
+        {/* Jami summary — qancha naqd / karta / perech · so'm va dollar */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:10,marginBottom:14}}>
+          {ost.typs.map(t=>{
+            const c=V.typTot[t]||{som:0,usd:0};
+            return (
+              <div key={t} style={{background:"#fff",border:bdr,borderRadius:11,padding:"11px 13px",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#64748b",marginBottom:5}}>{t}</div>
+                <div style={{fontSize:17,fontWeight:800,fontVariantNumeric:"tabular-nums",color:c.som<0?"#dc2626":"#0f172a"}}>{fnum(c.som)} <span style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>so'm</span></div>
+                {c.usd?(<div style={{fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",color:c.usd<0?"#dc2626":"#15803d",marginTop:2}}>{fnum(c.usd)} <span style={{fontSize:10,color:"#94a3b8",fontWeight:600}}>$</span></div>):null}
+              </div>
+            );
+          })}
+          <div style={{background:"linear-gradient(145deg,#f5f3ff,#ede9fe)",border:"1px solid #c4b5fd",borderRadius:11,padding:"11px 13px"}}>
+            <div style={{fontSize:11,fontWeight:800,color:"#6d28d9",marginBottom:5}}>JAMI</div>
+            <div style={{fontSize:17,fontWeight:800,fontVariantNumeric:"tabular-nums",color:V.grand.som<0?"#dc2626":"#6d28d9"}}>{fnum(V.grand.som)} <span style={{fontSize:11,color:"#a78bfa",fontWeight:600}}>so'm</span></div>
+            <div style={{fontSize:12.5,fontWeight:700,fontVariantNumeric:"tabular-nums",color:V.grand.usd<0?"#dc2626":"#15803d",marginTop:2}}>{fnum(V.grand.usd)} <span style={{fontSize:10,color:"#a78bfa",fontWeight:600}}>$</span></div>
+          </div>
+        </div>
+        </>
+      )}
 
       {!hasData ? (
         <div style={{background:"#fff",borderRadius:13,border:bdr,padding:"48px 20px",textAlign:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
@@ -3481,7 +3531,7 @@ function OstatkaView({ prixod, xarajat }){
                   <tr key={fl} className="day-row">
                     <td onClick={()=>setDetail(fl)} title="Detalni ko'rish (kurs bo'yicha)" style={td({fontWeight:600,color:"#4338ca",position:"sticky",left:0,background:bg,zIndex:1,cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted",whiteSpace:"nowrap"})}>{fl} ›</td>
                     {ost.typs.map(t=>{
-                      const c=ost.acc[fl]?.[t]||{som:0,usd:0};
+                      const c=V.acc[fl]?.[t]||{som:0,usd:0};
                       return (
                         <React.Fragment key={t}>
                           {cell(c.som,{borderLeft:bdr})}
@@ -3489,23 +3539,23 @@ function OstatkaView({ prixod, xarajat }){
                         </React.Fragment>
                       );
                     })}
-                    {cell(ost.filTot[fl].som,{borderLeft:"2px solid #c4b5fd",background:"#faf5ff",fontWeight:700,color:ost.filTot[fl].som<0?"#dc2626":"#6d28d9"})}
-                    {cell(ost.filTot[fl].usd,{background:"#faf5ff",fontWeight:700,color:ost.filTot[fl].usd<0?"#dc2626":"#6d28d9"})}
+                    {cell(V.filTot[fl].som,{borderLeft:"2px solid #c4b5fd",background:"#faf5ff",fontWeight:700,color:V.filTot[fl].som<0?"#dc2626":"#6d28d9"})}
+                    {cell(V.filTot[fl].usd,{background:"#faf5ff",fontWeight:700,color:V.filTot[fl].usd<0?"#dc2626":"#6d28d9"})}
                   </tr>
                 );
               })}
               <tr style={{borderTop:"2px solid #e2e8f0"}}>
                 <td style={td({fontWeight:800,color:"#0f172a",position:"sticky",left:0,background:"#f1f5f9",zIndex:1})}>JAMI</td>
                 {ost.typs.map(t=>{
-                  const c=ost.typTot[t]||{som:0,usd:0};
+                  const c=V.typTot[t]||{som:0,usd:0};
                   const cc=(v,bl)=>(
                     <td style={td({textAlign:"right",fontVariantNumeric:"tabular-nums",background:"#f1f5f9",fontWeight:700,
                       color:v<0?"#dc2626":"#0f172a",borderLeft:bl?bdr:undefined})}>{v?fnum(v):"—"}</td>
                   );
                   return <React.Fragment key={t}>{cc(c.som,true)}{cc(c.usd,false)}</React.Fragment>;
                 })}
-                <td style={td({textAlign:"right",fontVariantNumeric:"tabular-nums",background:"#ede9fe",fontWeight:800,color:ost.grand.som<0?"#dc2626":"#6d28d9",borderLeft:"2px solid #c4b5fd"})}>{fnum(ost.grand.som)}</td>
-                <td style={td({textAlign:"right",fontVariantNumeric:"tabular-nums",background:"#ede9fe",fontWeight:800,color:ost.grand.usd<0?"#dc2626":"#6d28d9"})}>{fnum(ost.grand.usd)}</td>
+                <td style={td({textAlign:"right",fontVariantNumeric:"tabular-nums",background:"#ede9fe",fontWeight:800,color:V.grand.som<0?"#dc2626":"#6d28d9",borderLeft:"2px solid #c4b5fd"})}>{fnum(V.grand.som)}</td>
+                <td style={td({textAlign:"right",fontVariantNumeric:"tabular-nums",background:"#ede9fe",fontWeight:800,color:V.grand.usd<0?"#dc2626":"#6d28d9"})}>{fnum(V.grand.usd)}</td>
               </tr>
               {(ost.head.som||ost.head.usd)?(
                 <tr style={{borderTop:"1px solid #fde68a"}}>
@@ -3536,11 +3586,11 @@ function OstatkaView({ prixod, xarajat }){
               <div style={{display:"flex",gap:10,marginBottom:14,flexWrap:"wrap"}}>
                 <div style={{flex:1,minWidth:130,background:"#f5f3ff",borderRadius:10,padding:"10px 12px"}}>
                   <div style={{fontSize:10,color:"#8b5cf6",fontWeight:700}}>JAMI so'm</div>
-                  <div style={{fontSize:16,fontWeight:800,fontVariantNumeric:"tabular-nums",color:(ost.filTot[detail]?.som||0)<0?"#dc2626":"#6d28d9"}}>{fnum(ost.filTot[detail]?.som||0)}</div>
+                  <div style={{fontSize:16,fontWeight:800,fontVariantNumeric:"tabular-nums",color:(V.filTot[detail]?.som||0)<0?"#dc2626":"#6d28d9"}}>{fnum(V.filTot[detail]?.som||0)}</div>
                 </div>
                 <div style={{flex:1,minWidth:130,background:"#f0fdf4",borderRadius:10,padding:"10px 12px"}}>
                   <div style={{fontSize:10,color:"#16a34a",fontWeight:700}}>JAMI USD</div>
-                  <div style={{fontSize:16,fontWeight:800,fontVariantNumeric:"tabular-nums",color:(ost.filTot[detail]?.usd||0)<0?"#dc2626":"#15803d"}}>{fnum(ost.filTot[detail]?.usd||0)}</div>
+                  <div style={{fontSize:16,fontWeight:800,fontVariantNumeric:"tabular-nums",color:(V.filTot[detail]?.usd||0)<0?"#dc2626":"#15803d"}}>{fnum(V.filTot[detail]?.usd||0)}</div>
                 </div>
               </div>
               <table style={{width:"100%",borderCollapse:"collapse"}}>
@@ -4423,7 +4473,7 @@ function App(){
   const [sheetsStatus,setSheetsStatus]=useState("idle"); // idle|loading|ok|err
   const [sheetsErr,  setSheetsErr]  = useState("");
   const [lastUpdated,setLastUpdated]=useState(null);
-  const [autoRefresh,setAutoRefresh]=useState(true);   // doimiy avtomatik yangilash (kodda yoqilgan)
+  const [autoRefresh,setAutoRefresh]=useState(false);  // default O'CHIQ — ishlayotganda filtr/ko'rinish reset bo'lmasin (kerak bo'lsa yoqiladi)
   const [refreshSec, setRefreshSec] =useState(120);
   const [countdown,  setCountdown]  =useState(0);
   /* ── Diller / Postavshik (raw jadval) ── */
