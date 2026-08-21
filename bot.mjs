@@ -433,15 +433,21 @@ function buildExcel(agg, dateLabel, kassa){
 }
 
 // ─── Puppeteer (bitta browser'ni qayta ishlatamiz) ──────────────────────────
-let _browser=null;
-async function getBrowser(){ if(!_browser){ _browser=await puppeteer.launch({ headless:"new", args:["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage"] }); } return _browser; }
+function withTimeout(promise, ms, label){
+  return Promise.race([ promise, new Promise((_,rej)=>setTimeout(()=>rej(new Error((label||"Amal")+" vaqti tugadi (timeout)")), ms)) ]);
+}
 async function renderImage(html){
-  const b=await getBrowser(); const page=await b.newPage();
+  const browser = await puppeteer.launch({
+    headless:"new", protocolTimeout:35000,
+    args:["--no-sandbox","--disable-setuid-sandbox","--disable-dev-shm-usage","--disable-gpu","--single-process","--no-zygote"]
+  });
   try{
+    const page=await browser.newPage();
     await page.setViewport({ width:960, height:900, deviceScaleFactor:2 });
-    await page.setContent(html, { waitUntil:"networkidle0" });
-    const el=await page.$("#card"); return await el.screenshot({ type:"png" });
-  } finally { await page.close(); }
+    await page.setContent(html, { waitUntil:"load", timeout:20000 });
+    const el=await page.$("#card");
+    return await el.screenshot({ type:"png" });
+  } finally { await browser.close().catch(()=>{}); }
 }
 
 // ─── Telegram ───────────────────────────────────────────────────────────────
@@ -460,6 +466,19 @@ function capMsg(agg, label, which){
     +"\n📥 Kirim: "+f2(agg.kirim)+"   📤 Chiqim: "+f2(agg.chiqim)+"   💰 Sof: "+f2(agg.net);
 }
 
+// Rasm chiqmasa — to'liq matnli hisobot (Kassa Ostatka + bugungi + filiallar)
+function reportText(agg, kassa, label, which){
+  let s = `📊 <b>Kunlik hisobot</b>${which?" ("+which+")":""} — ${label}`;
+  if(kassa && kassa.typs.length){
+    s += `\n\n💰 <b>Kassa Ostatka</b> (jami):`;
+    kassa.typs.forEach(t=>{ const c=kassa.typTot[t]||{som:0,usd:0}; s+=`\n• ${esc(t)}: ${fnum(c.som)} so'm${c.usd?` · ${fnum(c.usd)} $`:""}`; });
+    s += `\n<b>JAMI: ${fnum(kassa.grand.som)} so'm${kassa.grand.usd?` · ${fnum(kassa.grand.usd)} $`:""}</b>`;
+  }
+  s += `\n\n📅 <b>Bugungi</b>: 📥 ${f2(agg.kirim)} · 📤 ${f2(agg.chiqim)} · 💰 ${f2(agg.net)}`;
+  if(agg.fils.length){ s += `\n\n🏢 <b>Filiallar</b>`; agg.fils.forEach(f=>{ s+=`\n• ${esc(f.filial)}: 📥${f2(f.kirim)} 📤${f2(f.chiqim)} = ${f2(f.net)}`; }); }
+  return s;
+}
+
 // ─── Ma'lumot cache (60s) ───────────────────────────────────────────────────
 let _cache={ t:0, prixod:[], xarajat:[] };
 async function getData(){
@@ -476,10 +495,19 @@ async function sendReport(chatId, which){
   const agg = aggregate(prixod, xarajat, key);
   if(!agg.kRows.length && !agg.xRows.length){ await tgSendMessage(chatId, `📭 <b>${label}</b> uchun ma'lumot yo'q`); return; }
   const kassa = computeKassa(prixod, xarajat);  // barcha davr Kassa Ostatka
-  const png = await renderImage(reportHTML(agg, label, hm, which, kassa));
-  await sendPhoto(chatId, png, capMsg(agg, label, which));
-  const xls = buildExcel(agg, label, kassa);
-  await sendDoc(chatId, xls, `Kunlik_hisobot_${key}.xlsx`, "📎 Excel — filial, xarajat va Kassa Ostatka");
+  // Rasm — mustahkam: timeout bilan; chiqmasa matn bilan almashtiramiz (hech qachon bo'sh qolmaydi)
+  try{
+    const png = await withTimeout(renderImage(reportHTML(agg, label, hm, which, kassa)), 45000, "Rasm chizish");
+    await sendPhoto(chatId, png, capMsg(agg, label, which));
+  }catch(e){
+    console.error("⚠️ rasm chiqmadi, matn yuborilmoqda:", e.message);
+    await tgSendMessage(chatId, reportText(agg, kassa, label, which));
+  }
+  // Excel — har doim yuboriladi
+  try{
+    const xls = buildExcel(agg, label, kassa);
+    await sendDoc(chatId, xls, `Kunlik_hisobot_${key}.xlsx`, "📎 Excel — filial, xarajat va Kassa Ostatka");
+  }catch(e){ console.error("Excel xato:", e.message); }
 }
 
 // ─── /hisobot ni tinglash (long polling) ────────────────────────────────────
