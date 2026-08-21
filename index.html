@@ -5231,12 +5231,10 @@ function App(){
             </div>
 
             {/* ── KASSA XISOBI Tab ── */}
-            {activeTab==="kassa"&&(
-              <>
-                <TodayCard prixod={prixodData} xarajat={data}/>
-                <OstatkaView xarajat={filteredData} prixod={filteredPrixodData}/>
-              </>
-            )}
+            <div style={{display:activeTab==="kassa"?"block":"none"}}>
+              <TodayCard prixod={prixodData} xarajat={data}/>
+              <OstatkaView xarajat={filteredData} prixod={filteredPrixodData}/>
+            </div>
 
             {activeTab==="dilpost"&&(
               <div style={{display:"flex",gap:12,flexWrap:"wrap",alignItems:"flex-start"}}>
@@ -5253,9 +5251,9 @@ function App(){
               <SpravochnikView prixod={prixodData} xarajat={data}/>
             )}
 
-            {activeTab==="filkesmi"&&(
+            <div style={{display:activeTab==="filkesmi"?"block":"none"}}>
               <FilialKesmi prixod={prixodData} xarajat={data}/>
-            )}
+            </div>
 
             {/* Agent x Filial Prixod */}
             {activeTab==="px"&&(
