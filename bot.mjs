@@ -251,7 +251,7 @@ function tashkentNow(){
 }
 
 // ─── Qo'shimcha sozlamalar ──────────────────────────────────────────────────
-const DAILY_CHAT_ID = process.env.DAILY_CHAT_ID || process.env.TELEGRAM_CHAT_ID || ""; // 9:00 shu guruhga
+const DAILY_CHAT_ID = process.env.DAILY_CHAT_ID || process.env.TELEGRAM_CHAT_ID || "-1003820971069"; // 9:00 shu guruhga
 const DAILY_TIME    = process.env.DAILY_TIME || "09:00";  // Toshkent vaqti "HH:MM"
 const PORT          = process.env.PORT || 3000;
 
