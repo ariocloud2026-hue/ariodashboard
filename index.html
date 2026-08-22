@@ -4640,6 +4640,8 @@ function App(){
   useEffect(()=>{
     clearInterval(timerRef.current);
     clearInterval(cdownRef.current);
+    return; // Avtomatik yangilash BUTUNLAY o'chiq — ishlayotganda filtr/ko'rinish hech qachon reset bo'lmasin
+    // eslint-disable-next-line no-unreachable
     if(!autoRefresh||srcMode!=="sheets"||(!sheetsId&&!prixodId)) return;
     setCountdown(refreshSec);
     cdownRef.current=setInterval(()=>setCountdown(c=>c<=1?refreshSec:c-1),1000);
