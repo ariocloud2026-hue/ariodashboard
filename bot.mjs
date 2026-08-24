@@ -251,7 +251,7 @@ function tashkentNow(){
 }
 
 // ─── Qo'shimcha sozlamalar ──────────────────────────────────────────────────
-const DAILY_CHAT_ID = process.env.DAILY_CHAT_ID || process.env.TELEGRAM_CHAT_ID || "-1003820971069"; // 9:00 shu guruhga
+const DAILY_CHAT_ID = process.env.DAILY_CHAT_ID || process.env.TELEGRAM_CHAT_ID || "1003820971069"; // 9:00 shu guruhga
 const DAILY_TIME    = process.env.DAILY_TIME || "09:00";  // Toshkent vaqti "HH:MM"
 const PORT          = process.env.PORT || 3000;
 
@@ -284,6 +284,27 @@ function computeKassa(prixod, xarajat){
   return { typs, filLabels, acc, filTot, typTot, grand };
 }
 
+// Har filial oxirgi marta qachon ma'lumot kiritgan (eng so'nggi yozuv sanasi) + ogohlantirish
+function computeFilUpdates(prixod, xarajat, refKey){
+  const m={};  // filial -> {day, label}
+  const scan=(rows)=>{ for(const r of (rows||[])){ if(!r.day) continue; const fl=r.flabel||r.filial||"?"; if(!m[fl] || r.day>m[fl].day) m[fl]={day:r.day, label:r.dayLabel||r.day}; } };
+  scan(prixod); scan(xarajat);
+  const order=Object.values(LB);           // barcha filiallar (SH tartibida), ma'lumot yo'qlari ham
+  const now=tashkentNow();
+  const todayKey=`${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
+  const dayDiff=(a,b)=>{ if(!a) return null; const [ay,am,ad]=a.split("-").map(Number),[by,bm,bd]=b.split("-").map(Number); return Math.round((Date.UTC(by,bm-1,bd)-Date.UTC(ay,am-1,ad))/864e5); };
+  const list=order.map(fl=>{
+    const rec=m[fl];
+    const day=rec?rec.day:null, label=rec?rec.label:null;
+    const behind = !day || (refKey && day<refKey);   // hisobot kuniga ma'lumot kiritmagan bo'lsa — ogohlantirish
+    return { filial:fl, day, label, behind, daysAgo: day?dayDiff(day, todayKey):null };
+  });
+  // ma'lumot yo'q/eskilar tepaga (ogohlantirish ko'rinsin)
+  list.sort((a,b)=>(b.behind-a.behind) || ((b.day?1:0)-(a.day?1:0)));
+  const behindCount=list.filter(x=>x.behind).length;
+  return { list, behindCount, refKey };
+}
+
 // Sana (Toshkent): which = 'kecha' | 'bugun'
 function dayKeyLabel(which){
   const now = tashkentNow(); const t = new Date(now);
@@ -312,7 +333,7 @@ function aggregate(prixod, xarajat, dayKey){
 }
 
 // ─── Hisobot HTML (rasmga aylantiriladi) ────────────────────────────────────
-function reportHTML(agg, dateLabel, genTime, which, kassa){
+function reportHTML(agg, dateLabel, genTime, which, kassa, filUpd){
   const { kirim, chiqim, net, fils, chiqFil, kRows, xRows } = agg;
   const tile=(l,v,clr,bg,bd,ic)=>`<div style="background:${bg};border:1px solid ${bd};border-radius:14px;padding:14px 16px">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span style="font-size:11px;font-weight:800;color:${clr};letter-spacing:.4px">${l}</span><span style="font-size:18px">${ic}</span></div>
@@ -358,6 +379,23 @@ function reportHTML(agg, dateLabel, genTime, which, kassa){
       <div style="font-size:13px;color:#64748b;margin-top:2px">Kunlik yakun · barcha filiallar${which?(" · "+which):""}</div></div>
       <div style="text-align:right"><div style="font-size:20px;font-weight:800;color:#2563eb">${dateLabel}</div>
       <div style="font-size:11px;color:#94a3b8">${kRows.length+xRows.length} yozuv</div></div></div>
+    ${(function(){
+      if(!filUpd || !filUpd.list.length) return "";
+      const warn = filUpd.behindCount>0;
+      const rows = filUpd.list.map(x=>{
+        const ok = !x.behind;
+        const icon = ok ? "✅" : "⚠️";
+        const clr = ok ? "#15803d" : "#b91c1c";
+        const when = x.day ? esc(x.label) + (x.daysAgo!=null ? ` <span style="color:#94a3b8">(${x.daysAgo===0?"bugun":x.daysAgo===1?"kecha":x.daysAgo+" kun oldin"})</span>` : "")
+                          : `<span style="color:#b91c1c">ma'lumot yo'q</span>`;
+        return `<tr style="border-bottom:1px solid #eef2f7"><td style="padding:6px 10px;font-size:12px;font-weight:600;color:#1e293b">${icon} ${esc(x.filial)}</td><td style="padding:6px 10px;font-size:12px;text-align:right;color:${clr};font-weight:600">${when}</td></tr>`;
+      }).join("");
+      return `<div style="border:2px solid ${warn?"#fca5a5":"#a7f3d0"};background:${warn?"#fef2f2":"#f0fdf4"};border-radius:12px;padding:12px 14px;margin-bottom:18px">
+        <div style="font-size:14px;font-weight:800;color:${warn?"#b91c1c":"#15803d"};margin-bottom:2px">${warn?"⚠️ Ogohlantirish — filiallar ma'lumot kiritishi":"✅ Barcha filiallar ma'lumot kiritgan"}</div>
+        <div style="font-size:11px;color:#64748b;margin-bottom:8px">Hisobot sanasi: <b>${dateLabel}</b>${warn?` · <b style="color:#b91c1c">${filUpd.behindCount} ta filial</b> shu kunga ma'lumot kiritmagan`:""}</div>
+        <table style="width:100%;border-collapse:collapse"><tbody>${rows}</tbody></table>
+      </div>`;
+    })()}
     ${kOst}
     <div style="font-size:16px;font-weight:800;color:#0f172a;margin:8px 0 10px 2px">📅 Bugungi harakat <span style="font-size:11px;font-weight:600;color:#94a3b8">— ${dateLabel}</span></div>
     <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px">
@@ -384,7 +422,7 @@ function reportHTML(agg, dateLabel, genTime, which, kassa){
 }
 
 // ─── Excel (Umumiy + Chiqim Filial×Kat + Chiqim + Kirim) ────────────────────
-function buildExcel(agg, dateLabel, kassa){
+function buildExcel(agg, dateLabel, kassa, filUpd){
   const R=Math.round; const wb=XLSX.utils.book_new();
   const u=[["KUNLIK HISOBOT",dateLabel],[],["","$"],["Kirim",R(agg.kirim)],["Chiqim",R(agg.chiqim)],["Sof (ostatka)",R(agg.net)],[],["Filial","Kirim $","Chiqim $","Ostatka $"]];
   agg.fils.forEach(f=>u.push([f.filial,R(f.kirim),R(f.chiqim),R(f.net)]));
@@ -413,6 +451,13 @@ function buildExcel(agg, dateLabel, kassa){
   agg.kRows.forEach(r=>kc.push([r.dayLabel||"",r.flabel||r.filial||"",r.client||r.fio||"",r.manager||"",r.typ||"",r.cat||"",r.desc||"",r.cur||"",R(r.rate||0),r.sum||0,R(r.usd||0)]));
   const wsK=XLSX.utils.aoa_to_sheet(kc); wsK["!cols"]=[{wch:11},{wch:13},{wch:20},{wch:16},{wch:12},{wch:18},{wch:28},{wch:8},{wch:10},{wch:13},{wch:12}];
   XLSX.utils.book_append_sheet(wb,wsK,"Kirim");
+  // Yangilanish — har filial oxirgi ma'lumot sanasi + holat (ogohlantirish)
+  if(filUpd && filUpd.list.length){
+    const ua=[["Filial","Oxirgi ma'lumot sanasi","Necha kun oldin","Holat"]];
+    filUpd.list.forEach(x=>ua.push([ x.filial, x.day?x.label:"—", x.daysAgo!=null?x.daysAgo:"—", x.behind?"⚠️ kiritmagan":"✅ kiritgan" ]));
+    const wsU2=XLSX.utils.aoa_to_sheet(ua); wsU2["!cols"]=[{wch:16},{wch:20},{wch:14},{wch:16}];
+    XLSX.utils.book_append_sheet(wb,wsU2,"Yangilanish");
+  }
   // Kassa Ostatka — filial × to'lov turi (so'm/USD), barcha davr
   if(kassa && kassa.filLabels.length){
     const h1=["Filial"], h2=[""];
@@ -467,8 +512,14 @@ function capMsg(agg, label, which){
 }
 
 // Rasm chiqmasa — to'liq matnli hisobot (Kassa Ostatka + bugungi + filiallar)
-function reportText(agg, kassa, label, which){
+function reportText(agg, kassa, label, which, filUpd){
   let s = `📊 <b>Kunlik hisobot</b>${which?" ("+which+")":""} — ${label}`;
+  if(filUpd && filUpd.list.length){
+    s += filUpd.behindCount>0
+      ? `\n\n⚠️ <b>Ogohlantirish</b> — ${filUpd.behindCount} ta filial ${label} ga ma'lumot kiritmagan:`
+      : `\n\n✅ <b>Barcha filiallar</b> ma'lumot kiritgan.`;
+    filUpd.list.forEach(x=>{ const ic=x.behind?"⚠️":"✅"; const w=x.day?`${x.label}${x.daysAgo!=null?` (${x.daysAgo===0?"bugun":x.daysAgo===1?"kecha":x.daysAgo+" kun oldin"})`:""}`:"ma'lumot yo'q"; s+=`\n${ic} ${esc(x.filial)}: ${w}`; });
+  }
   if(kassa && kassa.typs.length){
     s += `\n\n💰 <b>Kassa Ostatka</b> (jami):`;
     kassa.typs.forEach(t=>{ const c=kassa.typTot[t]||{som:0,usd:0}; s+=`\n• ${esc(t)}: ${fnum(c.som)} so'm${c.usd?` · ${fnum(c.usd)} $`:""}`; });
@@ -495,18 +546,19 @@ async function sendReport(chatId, which){
   const agg = aggregate(prixod, xarajat, key);
   if(!agg.kRows.length && !agg.xRows.length){ await tgSendMessage(chatId, `📭 <b>${label}</b> uchun ma'lumot yo'q`); return; }
   const kassa = computeKassa(prixod, xarajat);  // barcha davr Kassa Ostatka
+  const filUpd = computeFilUpdates(prixod, xarajat, key); // filial oxirgi yangilanish + ogohlantirish
   // Rasm — mustahkam: timeout bilan; chiqmasa matn bilan almashtiramiz (hech qachon bo'sh qolmaydi)
   try{
-    const png = await withTimeout(renderImage(reportHTML(agg, label, hm, which, kassa)), 45000, "Rasm chizish");
+    const png = await withTimeout(renderImage(reportHTML(agg, label, hm, which, kassa, filUpd)), 45000, "Rasm chizish");
     await sendPhoto(chatId, png, capMsg(agg, label, which));
   }catch(e){
     console.error("⚠️ rasm chiqmadi, matn yuborilmoqda:", e.message);
-    await tgSendMessage(chatId, reportText(agg, kassa, label, which));
+    await tgSendMessage(chatId, reportText(agg, kassa, label, which, filUpd));
   }
   // Excel — har doim yuboriladi
   try{
-    const xls = buildExcel(agg, label, kassa);
-    await sendDoc(chatId, xls, `Kunlik_hisobot_${key}.xlsx`, "📎 Excel — filial, xarajat va Kassa Ostatka");
+    const xls = buildExcel(agg, label, kassa, filUpd);
+    await sendDoc(chatId, xls, `Kunlik_hisobot_${key}.xlsx`, "📎 Excel — filial, xarajat, Kassa Ostatka va Yangilanish");
   }catch(e){ console.error("Excel xato:", e.message); }
 }
 
@@ -538,14 +590,24 @@ function dailyTick(){
   const targetMin=H*60+M;
   const nowMin=now.getHours()*60+now.getMinutes();
   const dayStr=`${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
-  // Belgilangan vaqtdan keyin, 3 soatlik oynada, kuniga bir marta (aniq daqiqa o'tib ketsa ham yuboradi)
-  if(nowMin>=targetMin && nowMin<targetMin+180 && lastDaily!==dayStr){
+  // Faqat belgilangan vaqtda (10 daqiqalik oyna), kuniga bir marta.
+  // Redeploy/restartda YUBORMAYDI (startupda lastDaily bugunga o'rnatiladi — pastga qarang).
+  if(nowMin>=targetMin && nowMin<targetMin+10 && lastDaily!==dayStr){
     lastDaily=dayStr;
     console.log(`⏰ ${pad2(now.getHours())}:${pad2(now.getMinutes())} — kunlik hisobot yuborilmoqda → ${DAILY_CHAT_ID}`);
     sendReport(DAILY_CHAT_ID,"kecha").catch(e=>console.error("daily xato:",e.message));
   }
 }
-setInterval(dailyTick, 60000);   // har daqiqa tekshiradi
+// Startupda: agar belgilangan vaqt allaqachon o'tgan bo'lsa, bugun uchun qayta yubormasin
+(function initDaily(){
+  if(!DAILY_CHAT_ID) return;
+  const now=tashkentNow();
+  const parts=String(DAILY_TIME).split(":");
+  const H=parseInt(parts[0],10)||0, M=parseInt(parts[1],10)||0;
+  const nowMin=now.getHours()*60+now.getMinutes();
+  if(nowMin >= H*60+M){ lastDaily=`${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`; }
+})();
+setInterval(dailyTick, 60000);   // har daqiqa tekshiradi (faqat 9:00 da yuboradi)
 
 // ─── Health server (Railway/Render "Web Service" uchun port) ────────────────
 http.createServer((_,res)=>{ res.writeHead(200,{ "Content-Type":"text/plain" }); res.end("bot ishlayapti"); }).listen(PORT,()=>console.log("🌐 health:",PORT));
@@ -558,6 +620,5 @@ http.createServer((_,res)=>{ res.writeHead(200,{ "Content-Type":"text/plain" });
   if(DAILY_CHAT_ID) console.log(`🗓️  Kunlik: har kuni ${DAILY_TIME} (Toshkent) → ${DAILY_CHAT_ID}`);
   else console.warn("⚠️  DAILY_CHAT_ID yo'q — 9:00 avtomatik yuborish O'CHIQ. Guruh id (-100…) ni DAILY_CHAT_ID ga qo'ying.");
   console.log("🤖 Bot ishga tushdi. /hisobot ni kutmoqda…");
-  dailyTick();   // startupda ham tekshiradi (missed bo'lsa yuboradi)
   poll();
 })();
