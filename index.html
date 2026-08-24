@@ -5677,18 +5677,14 @@ window.addEventListener("load", () => {
 });
 </script>
 <script>
-/* ── Service worker: har doim eng yangi versiya ── */
+/* ── Service worker O'CHIRILDI: keshni tozalab, avtomatik reload/refresh to'xtatildi ── */
 if('serviceWorker' in navigator){
-  let refreshed=false;
-  navigator.serviceWorker.addEventListener('controllerchange',function(){
-    if(refreshed) return; refreshed=true; window.location.reload();
-  });
-  window.addEventListener('load',function(){
-    navigator.serviceWorker.register('sw.js').then(function(reg){
-      reg.update();
-      setInterval(function(){ reg.update(); }, 60*1000); // har daqiqada yangilanishni tekshirish
-    }).catch(function(){});
-  });
+  navigator.serviceWorker.getRegistrations().then(function(regs){
+    regs.forEach(function(r){ r.unregister(); });
+  }).catch(function(){});
+  if(window.caches && caches.keys){
+    caches.keys().then(function(keys){ keys.forEach(function(k){ caches.delete(k); }); }).catch(function(){});
+  }
 }
 </script>
 </body>
