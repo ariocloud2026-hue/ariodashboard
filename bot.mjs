@@ -251,7 +251,7 @@ function tashkentNow(){
 }
 
 // ─── Qo'shimcha sozlamalar ──────────────────────────────────────────────────
-const DAILY_CHAT_ID = process.env.DAILY_CHAT_ID || process.env.TELEGRAM_CHAT_ID || "1003820971069"; // 9:00 shu guruhga
+const DAILY_CHAT_ID = process.env.DAILY_CHAT_ID || process.env.TELEGRAM_CHAT_ID || "-1003820971069"; // 9:00 shu guruhga
 const DAILY_TIME    = process.env.DAILY_TIME || "09:00";  // Toshkent vaqti "HH:MM"
 const PORT          = process.env.PORT || 3000;
 
@@ -284,22 +284,24 @@ function computeKassa(prixod, xarajat){
   return { typs, filLabels, acc, filTot, typTot, grand };
 }
 
-// Har filial oxirgi marta qachon ma'lumot kiritgan (eng so'nggi yozuv sanasi) + ogohlantirish
+// Har filial oxirgi marta qachon ma'lumot kiritgan (eng so'nggi TO'G'RI yozuv sanasi) + ogohlantirish
 function computeFilUpdates(prixod, xarajat, refKey){
-  const m={};  // filial -> {day, label}
-  const scan=(rows)=>{ for(const r of (rows||[])){ if(!r.day) continue; const fl=r.flabel||r.filial||"?"; if(!m[fl] || r.day>m[fl].day) m[fl]={day:r.day, label:r.dayLabel||r.day}; } };
-  scan(prixod); scan(xarajat);
-  const order=Object.values(LB);           // barcha filiallar (SH tartibida), ma'lumot yo'qlari ham
   const now=tashkentNow();
+  const maxY=now.getFullYear()+1;
+  // Faqat haqiqiy sanalar (yil 2000..kelasi yil). "206-08-04" kabi buzuq sanalar e'tiborsiz qoldiriladi.
+  const okDay = d => { if(!d) return false; const y=parseInt(String(d).slice(0,4),10); return Number.isFinite(y) && y>=2000 && y<=maxY && /^\d{4}-\d{2}-\d{2}$/.test(String(d)); };
+  const m={};  // filial -> {day, label}
+  const scan=(rows)=>{ for(const r of (rows||[])){ if(!okDay(r.day)) continue; const fl=r.flabel||r.filial||"?"; if(!m[fl] || r.day>m[fl].day) m[fl]={day:r.day, label:r.dayLabel||r.day}; } };
+  scan(prixod); scan(xarajat);
+  const order=Object.values(LB);           // barcha filiallar (SH tartibida)
   const todayKey=`${now.getFullYear()}-${pad2(now.getMonth()+1)}-${pad2(now.getDate())}`;
   const dayDiff=(a,b)=>{ if(!a) return null; const [ay,am,ad]=a.split("-").map(Number),[by,bm,bd]=b.split("-").map(Number); return Math.round((Date.UTC(by,bm-1,bd)-Date.UTC(ay,am-1,ad))/864e5); };
   const list=order.map(fl=>{
     const rec=m[fl];
     const day=rec?rec.day:null, label=rec?rec.label:null;
-    const behind = !day || (refKey && day<refKey);   // hisobot kuniga ma'lumot kiritmagan bo'lsa — ogohlantirish
+    const behind = !day || (refKey && day<refKey);   // hisobot kuniga (yoki undan yangi) ma'lumot yo'q bo'lsa — ogohlantirish
     return { filial:fl, day, label, behind, daysAgo: day?dayDiff(day, todayKey):null };
   });
-  // ma'lumot yo'q/eskilar tepaga (ogohlantirish ko'rinsin)
   list.sort((a,b)=>(b.behind-a.behind) || ((b.day?1:0)-(a.day?1:0)));
   const behindCount=list.filter(x=>x.behind).length;
   return { list, behindCount, refKey };
