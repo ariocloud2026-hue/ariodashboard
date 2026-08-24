@@ -4476,7 +4476,7 @@ function App(){
   const [sheetsStatus,setSheetsStatus]=useState("idle"); // idle|loading|ok|err
   const [sheetsErr,  setSheetsErr]  = useState("");
   const [lastUpdated,setLastUpdated]=useState(null);
-  const [autoRefresh,setAutoRefresh]=useState(false);  // default O'CHIQ — ishlayotganda filtr/ko'rinish reset bo'lmasin (kerak bo'lsa yoqiladi)
+  const [autoRefresh,setAutoRefresh]=useState(true);   // default YOQILGAN — har 60s jim yangilanish (filtr buzilmaydi)
   const [refreshSec, setRefreshSec] =useState(120);
   const [countdown,  setCountdown]  =useState(0);
   /* ── Diller / Postavshik (raw jadval) ── */
@@ -4633,24 +4633,35 @@ function App(){
     return ()=>window.removeEventListener('resize',h);
   },[]);
 
-  /* ── Auto-refresh (xarajat + prixod) ── */
-  useEffect(()=>{
-    loadFnRef.current=()=>{
-      if(sheetsId) loadFromSheets(sheetsUrl);
-      if(prixodId) loadPrixodFromSheets(prixodUrl);
-    };
-  });
-  useEffect(()=>{
+  /* ── "Jim" auto-refresh: faqat ma'lumotni yangilaydi, filtr/oyna/sanani BUZMAYDI ── */
+  const silentRefresh = useCallback(async () => {
+    try {
+      if (sheetsId) {
+        const sh = {};
+        await Promise.all(SH.map(async n => { try { sh[n] = await fetchSheetCSV(sheetsId, n); } catch (e) { sh[n] = []; } }));
+        const rows = SH.filter(n => sh[n] && sh[n].length > 1).flatMap(n => parseRows(sh[n], n, LB[n] || n));
+        if (rows.length) setData(rows);
+      }
+      if (prixodId) {
+        const ph = {};
+        await Promise.all(SH.map(async n => { try { ph[n] = await fetchSheetCSV(prixodId, n); } catch (e) { ph[n] = []; } }));
+        const prows = SH.filter(n => ph[n] && ph[n].length > 1).flatMap(n => parsePrixodRows(ph[n], n, LB[n] || n));
+        if (prows.length) setPrixodData(prows);
+      }
+      setLastUpdated(new Date());
+    } catch (e) { /* jim — xatoni ko'rsatmaymiz */ }
+  }, [sheetsId, prixodId]);
+
+  useEffect(() => {
     clearInterval(timerRef.current);
     clearInterval(cdownRef.current);
-    return; // Avtomatik yangilash BUTUNLAY o'chiq — ishlayotganda filtr/ko'rinish hech qachon reset bo'lmasin
-    // eslint-disable-next-line no-unreachable
-    if(!autoRefresh||srcMode!=="sheets"||(!sheetsId&&!prixodId)) return;
-    setCountdown(refreshSec);
-    cdownRef.current=setInterval(()=>setCountdown(c=>c<=1?refreshSec:c-1),1000);
-    timerRef.current=setInterval(()=>{loadFnRef.current();},refreshSec*1000);
-    return()=>{clearInterval(timerRef.current);clearInterval(cdownRef.current);};
-  },[autoRefresh,refreshSec,sheetsId,prixodId,srcMode]);
+    if (!autoRefresh || srcMode !== "sheets" || (!sheetsId && !prixodId)) return;
+    const sec = 60; // har daqiqada
+    setCountdown(sec);
+    cdownRef.current = setInterval(() => setCountdown(c => c <= 1 ? sec : c - 1), 1000);
+    timerRef.current = setInterval(() => { silentRefresh(); }, sec * 1000);
+    return () => { clearInterval(timerRef.current); clearInterval(cdownRef.current); };
+  }, [autoRefresh, sheetsId, prixodId, srcMode, silentRefresh]);
 
   /* ── Diller / Postavshik yuklovchilar ── */
   const loadDiller = useCallback(async ()=>{
@@ -4829,7 +4840,7 @@ function App(){
           <div style={{display:"flex",alignItems:"center",gap:7}}>
             <span className="pulse" style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",flexShrink:0}}/>
             <span style={{fontSize:11.5,fontWeight:600,color:"#15803d"}}>Onlayn</span>
-            <span style={{fontSize:10,fontWeight:700,color:"#6d28d9",background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:6,padding:"1px 6px"}}>v55</span>
+            <span style={{fontSize:10,fontWeight:700,color:"#6d28d9",background:"#f5f3ff",border:"1px solid #ddd6fe",borderRadius:6,padding:"1px 6px"}}>v56</span>
             {lastUpdated&&!isMobile&&(
               <span style={{fontSize:11,color:"#94a3b8",fontVariantNumeric:"tabular-nums"}}>
                 {"· yangilandi "+lastUpdated.toLocaleTimeString("uz-UZ",{hour:"2-digit",minute:"2-digit"})}
